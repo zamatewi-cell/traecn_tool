@@ -2,13 +2,17 @@ package config
 
 // Trae CN backend API constants
 const (
-	AgentDomain    = "https://trae-api-cn.mchost.guru"
-	WSDomain       = "wss://trae-ws-cn.mchost.guru/custom_model"
 	AppID          = "6eefa01c-1036-4c7e-9ca5-d891f63bfcd8"
 	IDEVersion     = "3.3.37"
 	IDEVersionCode = "20260212"
 	IDEVersionType = "stable"
 	TrafficType    = "prod"
+)
+
+// Upstream base domains are vars so tests can swap in a local server.
+var (
+	AgentDomain = "https://trae-api-cn.mchost.guru"
+	WSDomain    = "wss://trae-ws-cn.mchost.guru/custom_model"
 )
 
 // API endpoints

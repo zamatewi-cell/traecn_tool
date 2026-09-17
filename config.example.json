@@ -3,9 +3,26 @@
   "log_level": "info",
   "accounts": [
     {
-      "name": "default",
-      "storage_path": "",
-      "weight": 1
+      "name": "local_trae",
+      "storage_path": ""
+    },
+    {
+      "name": "backup_token",
+      "token": "eyJhbGci..."
+    },
+    {
+      "name": "from_env",
+      "env_var": "TRAE_CN_TOKEN"
     }
-  ]
+  ],
+  "protect": {
+    "max_payload_bytes": 524288,
+    "max_message_bytes": 65536,
+    "filter_enabled": false,
+    "filter_replacements": {
+      "敏感词A": "替代词A"
+    },
+    "max_concurrent": 4,
+    "min_interval_ms": 0
+  }
 }

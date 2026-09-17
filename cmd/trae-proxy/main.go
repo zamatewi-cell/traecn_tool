@@ -58,15 +58,25 @@ func main() {
 		cfg.ListenAddr = *listen
 	}
 
-	// Initialize token provider
-	tp := auth.NewTokenProvider()
+	// Initialize credential pool with proactive refresh + circuit breaking
+	tp := auth.NewPool(&auth.PoolOptions{
+		Refresher: auth.NewTokenRefresher(config.AgentDomain, nil),
+		Logger:    logger,
+	})
 
 	if len(cfg.Accounts) > 0 {
 		for _, acc := range cfg.Accounts {
-			if acc.Token != "" {
+			switch {
+			case acc.Token != "":
 				tp.AddAccountWithToken(acc.Name, acc.Token)
 				logger.Info("added account (direct token)", "name", acc.Name)
-			} else {
+			case acc.EnvVar != "":
+				if err := tp.AddAccountFromEnv(acc.Name, acc.EnvVar); err != nil {
+					logger.Warn("failed to add account from env", "name", acc.Name, "env_var", acc.EnvVar, "error", err)
+				} else {
+					logger.Info("added account (env var)", "name", acc.Name, "env_var", acc.EnvVar)
+				}
+			default:
 				storagePath := acc.StoragePath
 				if storagePath == "" {
 					storagePath = auth.DefaultStoragePath()
@@ -74,23 +84,35 @@ func main() {
 				if err := tp.AddAccount(acc.Name, storagePath); err != nil {
 					logger.Warn("failed to add account", "name", acc.Name, "error", err)
 				} else {
-					logger.Info("added account", "name", acc.Name)
+					logger.Info("added account (storage)", "name", acc.Name)
 				}
 			}
 		}
 	} else {
-		storagePath := auth.DefaultStoragePath()
-		if err := tp.AddAccount("default", storagePath); err != nil {
-			logger.Error("failed to auto-detect Trae CN token", "path", storagePath, "error", err)
-			logger.Info("you can create config.json to manually configure tokens")
+		sniffed := auth.SniffAccounts()
+		for _, s := range sniffed {
+			if err := tp.AddSource(s.Name, s.Source); err != nil {
+				logger.Warn("failed to add sniffed credential", "name", s.Name, "error", err)
+			} else {
+				logger.Info("auto-detected credential", "name", s.Name, "source", s.Source.Type)
+			}
+		}
+		if len(tp.GetAccounts()) == 0 {
+			logger.Error("no Trae CN credential found",
+				"sniffed_paths", auth.StorageCandidates(),
+				"env_vars", auth.EnvTokenVars)
+			logger.Info("create config.json to configure tokens manually (token / env_var / storage_path)")
 			os.Exit(1)
 		}
-		logger.Info("auto-detected Trae CN token")
 	}
 
 	// Start proxy
 	traeProxy := proxy.NewTraeProxy(tp, logger)
-	server := openai.NewServer(traeProxy, logger)
+	traeProxy.SetProtection(cfg.Protect)
+	server := openai.NewServer(traeProxy, logger, nil)
+
+	// Best-effort dynamic model registry refresh (falls back to builtin list).
+	go traeProxy.RefreshModelRegistry()
 
 	logger.Info("====================================")
 	logger.Info("  trae-proxy v" + version)

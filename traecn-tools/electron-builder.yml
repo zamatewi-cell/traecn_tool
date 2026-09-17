@@ -1,0 +1,23 @@
+appId: com.traecn.tools
+productName: TraeCN Tools
+directories:
+  output: release
+  buildResources: resources
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: "TraeCN.Tools_${version}_x64-setup.${ext}"
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: TraeCN Tools
+  uninstallDisplayName: TraeCN Tools

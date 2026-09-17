@@ -1,262 +1,143 @@
 # trae-proxy
 
-> Trae CN ¡ú OpenAI Compatible API ·´Ïò´úÀí¹¤¾ß
+> å°† Trae CN æœ¬åœ° AI èƒ½åŠ›è½¬æ¢ä¸ºæ ‡å‡† OpenAI / Anthropic / Codex å…¼å®¹ API çš„è½»é‡åå‘ä»£ç†
 
-½« [Trae CN](https://www.trae.com.cn/)£¨×Ö½ÚÌø¶¯ AI IDE£©ÖĞµÄ 14+ ¸ö AI Ä£ĞÍ·´´úÎª±ê×¼ OpenAI ¼æÈİ API£¬ÊÊÅäÈÎºÎÖ§³Ö OpenAI API µÄ¿Í»§¶Ë¡£
+[![Go Version](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat&logo=go)](https://go.dev/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-## ÌØĞÔ
+`trae-proxy` è‡ªåŠ¨è¯»å–å¹¶è§£å¯†æœ¬åœ° Trae CN IDE çš„ä¼šè¯å‡­è¯ï¼ŒæŠŠåº•å±‚å¤§æ¨¡å‹èƒ½åŠ›å°è£…ä¸ºæœ¬åœ° HTTP APIï¼ˆé»˜è®¤ `http://localhost:9090/v1`ï¼‰ï¼Œä¾› Cherry Studioã€Clineã€Claude Codeã€Codex ç­‰å®¢æˆ·ç«¯æ¥å…¥ã€‚
 
-- **OpenAI ¼æÈİ API** ¡ª ±ê×¼ `/v1/chat/completions` ºÍ `/v1/models` ½Ó¿Ú
-- **14+ Ä£ĞÍÖ§³Ö** ¡ª Doubao-Seed¡¢DeepSeek¡¢GLM-5¡¢Kimi-K2¡¢Qwen3¡¢Claude¡¢GPT-4.1 µÈ
-- **SSE Á÷Ê½Êä³ö** ¡ª ÍêÕûµÄ Server-Sent Events Á÷Ê½ÏìÓ¦Ö§³Ö
-- **¶àÕËºÅ¹ÜÀí** ¡ª ÂÖÑ¯¸ºÔØ¾ùºâ£¬×Ô¶¯ Token Ë¢ĞÂ
-- **ÅÅ¶ÓÍ¸´«** ¡ª ÊµÊ±ÏÔÊ¾Ä£ĞÍÅÅ¶ÓÎ»ÖÃºÍµÈ´ıÈËÊı
-- **ÁãÅäÖÃÆô¶¯** ¡ª ×Ô¶¯¼ì²â±¾»ú Trae CN Token£¬ÎŞĞèÊÖ¶¯ÅäÖÃ
-- **¿çÆ½Ì¨** ¡ª Ö§³Ö Windows / macOS / Linux
+---
 
-## Ö§³ÖµÄÄ£ĞÍ
+## æ ¸å¿ƒç‰¹æ€§
 
-| Ä£ĞÍ | Ìá¹©ÉÌ | Config Name |
-|------|--------|-------------|
-| Doubao-Seed-1.6 | ×Ö½ÚÌø¶¯ | `doubao-seed-1.6` |
-| Doubao-1.5-Pro | ×Ö½ÚÌø¶¯ | `doubao-1.5-pro` |
-| DeepSeek-V3 | DeepSeek | `deepseek-v3` |
-| DeepSeek-R1 | DeepSeek | `deepseek-r1` |
-| GLM-5 | ÖÇÆ× | `glm-5` |
-| GLM-4-Plus | ÖÇÆ× | `glm-4-plus` |
-| Kimi-K2 | Moonshot | `kimi-k2` |
-| MiniMax-M1 | MiniMax | `minimax-m1` |
-| Qwen3-Coder | °¢Àï°Í°Í | `qwen3-coder` |
-| Qwen3 | °¢Àï°Í°Í | `qwen3` |
-| Gemini-2.5-Pro | Google | `gemini-2.5-pro` |
-| Claude-Sonnet-4 | Anthropic | `claude-sonnet-4` |
-| GPT-4.1 | OpenAI | `gpt-4.1` |
+- **å‡­è¯è‡ªåŠ¨è£…è½½**ï¼šAES-128-CBC è§£å¯† `storage.json`ï¼ˆMagic å¤´æ ¡éªŒï¼‰ï¼Œä¹Ÿæ”¯æŒ `config.json` ç›´å¡« tokenã€ç¯å¢ƒå˜é‡ä¸‰ç§æ¥æºï¼›è¯·æ±‚å‰æ£€æŸ¥è¿‡æœŸã€æå‰ 5 åˆ†é’Ÿåˆ·æ–°ï¼Œ401 æ—¶ç†”æ–­å¹¶è½®æ¢è´¦å·ã€‚
+- **å¤šåè®®**ï¼š`/v1/chat/completions`ï¼ˆOpenAIï¼‰ã€`/v1/messages`ï¼ˆAnthropicï¼‰ã€`/v1/responses`ï¼ˆCodexï¼‰ã€‚
+- **æ€è€ƒé“¾ä¸å·¥å…·è°ƒç”¨**ï¼š`<think>` è·¨åˆ†ç‰‡åˆ‡å‰²ï¼›`delta.reasoning_content` / `delta.content` åˆ†æµï¼›`tools` / `tool_choice` åŒå‘é€ä¼ ã€‚
+- **é˜²æŠ¤**ï¼šContext Projectorï¼ˆæ ˆè¿½è¸ªå‰¥ç¦» + å¤´å°¾æˆªæ–­ + æ€»é¢„ç®—ç¼©å‡ï¼‰ã€æ•æ„Ÿè¯è¿‡æ»¤ï¼ˆé»˜è®¤å…³ï¼‰ã€å¹¶å‘/é—´éš”é™æµã€‚
+- **æ¨¡å‹æ³¨å†Œè¡¨**ï¼šå†…ç½® 16 ä¸ªæ¨¡å‹ï¼ˆå« MaxTokens / ContextWindow / åˆ«åï¼‰ï¼Œå¯åŠ¨åé€šè¿‡ `model_list` åŠ¨æ€åˆå¹¶ä¸Šæ¸¸é¢„è®¾æ¨¡å‹ã€‚
 
-> Ä£ĞÍÁĞ±í»áËæ Trae CN °æ±¾¸üĞÂ¶ø±ä»¯£¬¿ÉÍ¨¹ı `/v1/models` ½Ó¿ÚÊµÊ±»ñÈ¡¡£
+---
 
-## ¿ìËÙ¿ªÊ¼
+## å¿«é€Ÿå¼€å§‹
 
-### Ç°ÖÃÌõ¼ş
-
-- [Go 1.22+](https://go.dev/dl/) ÒÑ°²×°
-- [Trae CN](https://www.trae.com.cn/) ÒÑ°²×°²¢µÇÂ¼
-
-### °²×°
-
-```bash
-# ¿ËÂ¡²Ö¿â
-git clone https://github.com/zamatewi-cell/traecn_tool.git
-cd traecn_tool
-
-# ±àÒë
-go build -o trae-proxy ./cmd/trae-proxy
-
-# ÔËĞĞ£¨×Ô¶¯¼ì²â Token£©
-./trae-proxy
+```powershell
+go build -o trae-proxy.exe ./cmd/trae-proxy
+.\trae-proxy.exe
 ```
 
-### Ê¹ÓÃ
+å¯é€‰ï¼š`-listen ":8080"`ã€`-log-level debug`ã€`-config config.json`ã€‚
 
-```bash
-# Æô¶¯´úÀí
-./trae-proxy --listen :9090
+å®¢æˆ·ç«¯å¡«å…¥ï¼š
 
-# ²âÊÔ API
+| é…ç½®é¡¹ | å†…å®¹ |
+|---|---|
+| **Base URL** | `http://localhost:9090/v1` |
+| **API Key** | ä»»æ„ï¼ˆé»˜è®¤ä¸æ ¡éªŒï¼‰ |
+| **Model** | `Seed-Code` / `doubao` / `deepseek-r1` / `glm` ç­‰ |
+
+```powershell
+curl http://localhost:9090/health
 curl http://localhost:9090/v1/models
-
-# ·¢ËÍÁÄÌìÇëÇó
-curl http://localhost:9090/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "deepseek-v3",
-    "messages": [{"role": "user", "content": "ÄãºÃ"}],
-    "stream": true
-  }'
 ```
 
-### ÃüÁîĞĞ²ÎÊı
+æ›´å®Œæ•´çš„æ¥å…¥ç¤ºä¾‹è§ [QUICKSTART.md](QUICKSTART.md)ã€‚
 
-```
-Usage: trae-proxy [options]
+---
 
-Options:
-  -config string    ÅäÖÃÎÄ¼şÂ·¾¶ (Ä¬ÈÏ "config.json")
-  -listen string    ¼àÌıµØÖ· (Ä¬ÈÏ ":9090")
-  -log-level string ÈÕÖ¾¼¶±ğ debug/info/warn/error (Ä¬ÈÏ "info")
-  -version          ÏÔÊ¾°æ±¾ºÅ
-```
+## å†…ç½®æ¨¡å‹
 
-## ÅäÖÃ
+å®¢æˆ·ç«¯å¯ç”¨ **Model ID** æˆ– **åˆ«å**ã€‚è½¬å‘æ—¶ä¼šæ˜ å°„åˆ°ä¸Šæ¸¸çœŸå® `model_name`ï¼ˆ`UpstreamID`ï¼‰ï¼›æœªéªŒè¯æ˜ å°„çš„æ¨¡å‹ä¸çç¼–ï¼Œå›è½é»˜è®¤ `seed_m8`ã€‚å¯åŠ¨åè¿œç¨‹åˆ·æ–°ä¼šåˆå¹¶ä¸Šæ¸¸ `is_preset` é¢„è®¾æ¨¡å‹ï¼ˆllm_raw_chat åªæœåŠ¡è¿™ç±»æ¨¡å‹ï¼‰ï¼Œä»¥ `/v1/models` ä¸ºå‡†ã€‚
 
-¸´ÖÆ `config.example.json` Îª `config.json`£º
+| å‚å•† | Model ID | åˆ«å | ä¸Šæ¸¸ model_name | MaxTokens | Context |
+|---|---|---|---|---|---|
+| ByteDance | `Seed-Evolving` | | ï¼ˆè¿œç¨‹åˆ·æ–°åå¡«å…¥ï¼‰ | 16000 | 256K |
+| ByteDance | `Seed-2.1-Pro-0915` | | ï¼ˆè¿œç¨‹åˆ·æ–°åå¡«å…¥ï¼‰ | 16000 | 256K |
+| ByteDance | `Seed-2.1-Turbo` | | ï¼ˆè¿œç¨‹åˆ·æ–°åå¡«å…¥ï¼‰ | 16000 | 256K |
+| ByteDance | `Seed-Code` | `doubao`, `seed` | `seed_m8` | 16000 | 256K |
+| Zhipu | `GLM-5.3-Flash` | | ï¼ˆè¿œç¨‹åˆ·æ–°åå¡«å…¥ï¼‰ | 8192 | 128K |
+| Zhipu | `GLM-5.3` | `glm-5`, `glm` | ï¼ˆè¿œç¨‹åˆ·æ–°åå¡«å…¥ï¼‰ | 16384 | 128K |
+| Zhipu | `GLM-5.2` | | ï¼ˆè¿œç¨‹åˆ·æ–°åå¡«å…¥ï¼‰ | 16384 | 128K |
+| DeepSeek | `DeepSeek-V4.1` | | ï¼ˆè¿œç¨‹åˆ·æ–°åå¡«å…¥ï¼‰ | 16384 | 128K |
+| DeepSeek | `DeepSeek-V4-Flash` | `deepseek-v4`, `deepseek-chat` | `deepseek-V3` | 8192 | 128K |
+| DeepSeek | `DeepSeek-V4-Pro` | `deepseek-r1`, `deepseek-reasoner` | `deepseek-R1` | 16384 | 128K |
+| Moonshot | `Kimi-K3` | `kimi` | ï¼ˆè¿œç¨‹åˆ·æ–°åå¡«å…¥ï¼‰ | 16384 | 256K |
+| Moonshot | `Kimi-K2.8-Preview` | | ï¼ˆè¿œç¨‹åˆ·æ–°åå¡«å…¥ï¼‰ | 16384 | 256K |
+| MiniMax | `MiniMax-M3` | `minimax` | ï¼ˆè¿œç¨‹åˆ·æ–°åå¡«å…¥ï¼‰ | 16384 | 1M |
+| Alibaba | `Qwen3.8-Flash` | | ï¼ˆè¿œç¨‹åˆ·æ–°åå¡«å…¥ï¼‰ | 8192 | 128K |
+| Alibaba | `Qwen3.8-Max` | | ï¼ˆè¿œç¨‹åˆ·æ–°åå¡«å…¥ï¼‰ | 16384 | 256K |
+| Alibaba | `Qwen3.7-Plus` | `qwen` | ï¼ˆè¿œç¨‹åˆ·æ–°åå¡«å…¥ï¼‰ | 16384 | 128K |
+
+é»˜è®¤æ¨¡å‹ï¼š`Seed-Code`ã€‚
+
+---
+
+## é…ç½®
+
+å¤åˆ¶ `config.example.json` ä¸º `config.json`ï¼ˆä¸å¯æ‰§è¡Œæ–‡ä»¶åŒç›®å½•ï¼Œæˆ–ç”¨ `-config` æŒ‡å®šï¼‰ï¼š
 
 ```json
 {
   "listen_addr": ":9090",
   "log_level": "info",
   "accounts": [
-    {
-      "name": "main",
-      "storage_path": "",
-      "weight": 1
-    }
-  ]
-}
-```
-
-| ×Ö¶Î | ËµÃ÷ |
-|------|------|
-| `listen_addr` | ¼àÌıµØÖ·£¬Èç `:9090` |
-| `log_level` | ÈÕÖ¾¼¶±ğ£ºdebug / info / warn / error |
-| `accounts[].name` | ÕËºÅ±ğÃû |
-| `accounts[].storage_path` | Trae CN storage.json Â·¾¶£¨Áô¿Õ×Ô¶¯¼ì²â£© |
-| `accounts[].token` | Ö±½ÓÌá¹© JWT Token£¨¿ÉÑ¡£¬ÓÅÏÈ¼¶¸ßÓÚ storage_path£© |
-| `accounts[].weight` | ¸ºÔØ¾ùºâÈ¨ÖØ |
-
-### ×Ô¶¯¼ì²â
-
-Èç¹û²»Ìá¹© `config.json`£¬³ÌĞò»á×Ô¶¯¼ì²â£º
-
-```
-Windows: %APPDATA%\Trae CN\User\globalStorage\storage.json
-macOS:   ~/Library/Application Support/Trae CN/User/globalStorage/storage.json
-Linux:   ~/.config/Trae CN/User/globalStorage/storage.json
-```
-
-## API ½Ó¿Ú
-
-### GET /v1/models
-
-·µ»Ø¿ÉÓÃÄ£ĞÍÁĞ±í£¨OpenAI ¸ñÊ½£©¡£
-
-### POST /v1/chat/completions
-
-OpenAI ¼æÈİµÄÁÄÌì½Ó¿Ú£¬Ö§³ÖÁ÷Ê½ºÍ·ÇÁ÷Ê½¡£
-
-```json
-{
-  "model": "deepseek-v3",
-  "messages": [
-    {"role": "system", "content": "ÄãÊÇÒ»¸öÓĞÓÃµÄÖúÊÖ"},
-    {"role": "user", "content": "½âÊÍÁ¿×Ó¼ÆËã"}
+    { "name": "local_trae", "storage_path": "" },
+    { "name": "backup_token", "token": "eyJhbGci..." },
+    { "name": "from_env", "env_var": "TRAE_CN_TOKEN" }
   ],
-  "stream": true,
-  "temperature": 0.7,
-  "max_tokens": 4096
+  "protect": {
+    "max_payload_bytes": 524288,
+    "max_message_bytes": 65536,
+    "filter_enabled": false,
+    "filter_replacements": { "æ•æ„Ÿè¯A": "æ›¿ä»£è¯A" },
+    "max_concurrent": 4,
+    "min_interval_ms": 0
+  }
 }
 ```
 
-### GET /v1/queue/status
+| å­—æ®µ | è¯´æ˜ |
+|---|---|
+| `accounts[].storage_path` | Trae `storage.json` è·¯å¾„ï¼›ç©ºåˆ™è‡ªåŠ¨å—…æ¢ Windows / macOS / Linux ä¸‰å¹³å°é»˜è®¤ä½ç½® |
+| `accounts[].token` | ç›´æ¥æä¾› JWT |
+| `accounts[].env_var` | ä»ç¯å¢ƒå˜é‡è¯»å– JWT |
+| `protect.max_payload_bytes` | æ¶ˆæ¯åˆ—è¡¨æ€»é¢„ç®—ï¼ˆ0=ä¸é™ï¼‰ï¼Œè¶…å‡ºåˆ™å¤´å°¾æˆªæ–­ |
+| `protect.max_message_bytes` | å•æ¡æ¶ˆæ¯ä¸Šé™ |
+| `protect.filter_enabled` | æ•æ„Ÿè¯å¹³æ»‘ï¼Œé»˜è®¤å…³ |
+| `protect.max_concurrent` | ä¸Šæ¸¸å¹¶å‘ä¸Šé™ |
+| `protect.min_interval_ms` | ä¸Šæ¸¸è¯·æ±‚æœ€å°é—´éš” |
 
-²éÑ¯Ä£ĞÍÅÅ¶Ó×´Ì¬¡£
+æ—  `config.json` æ—¶ä½¿ç”¨é»˜è®¤é…ç½®å¹¶è‡ªåŠ¨æ¢æµ‹æœ¬åœ° Trae CN å‡­è¯ã€‚
 
-```
-GET /v1/queue/status               # ËùÓĞÄ£ĞÍµÄÅÅ¶Ó×´Ì¬
-GET /v1/queue/status?model=glm-5   # Ö¸¶¨Ä£ĞÍµÄÅÅ¶Ó×´Ì¬
-```
+---
 
-### GET /health
+## API
 
-½¡¿µ¼ì²é¡£
+| æ–¹æ³• | è·¯å¾„ | è¯´æ˜ |
+|---|---|---|
+| GET | `/health` | å¥åº·æ£€æŸ¥ |
+| GET | `/v1/models` | æ¨¡å‹åˆ—è¡¨ï¼ˆå«å…ƒæ•°æ®ï¼‰ |
+| POST | `/v1/chat/completions` | OpenAI Chat Completionsï¼ˆæµå¼/éæµå¼ï¼‰ |
+| POST | `/v1/messages` | Anthropic Messages |
+| POST | `/v1/responses` | Codex Responses |
+| GET | `/v1/queue/status` | ä¸Šæ¸¸æ’é˜ŸçŠ¶æ€ |
+| GET | `/v1/accounts` | è´¦å·æ± çŠ¶æ€ |
 
-## ¼¼Êõ¼Ü¹¹
+---
 
-```
-©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´     ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´     ©°©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©´
-©¦  ÈÎÒâ OpenAI ©¦     ©¦  trae-proxy  ©¦     ©¦  Trae CN Backend     ©¦
-©¦  ¼æÈİ¿Í»§¶Ë   ©¦©¤©¤©¤©¤?©¦  :9090       ©¦©¤©¤©¤©¤?©¦  trae-api-cn.mchost  ©¦
-©¦  (curl/SDK)  ©¦?©¤©¤©¤©¤©¦  OpenAI API  ©¦?©¤©¤©¤©¤©¦  .guru               ©¦
-©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼     ©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼     ©¸©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¼
-                     ©¦ Token ÌáÈ¡    ©¦
-                     ©¦ ¸ñÊ½×ª»»      ©¦
-                     ©¦ SSE Á÷Ê½      ©¦
-                     ©¦ ÅÅ¶Ó¼à¿Ø      ©¦
-                     ©¦ ¶àÕËºÅÂÖÑ¯    ©¦
-```
+## æ„å»ºä¸æµ‹è¯•
 
-### ¹¤×÷Á÷³Ì
-
-1. **Token ÌáÈ¡** ¡ª ×Ô¶¯´Ó Trae CN µÄ `storage.json` ¶ÁÈ¡ JWT Token
-2. **ÇëÇó×ª»»** ¡ª ½« OpenAI ¸ñÊ½ÇëÇó×ªÎª Trae CN API ¸ñÊ½
-3. **ÇëÇó×ª·¢** ¡ª ´øÉÏÍêÕûµÄÉè±¸ĞÅÏ¢ºÍÈÏÖ¤Í··¢ËÍµ½ Trae ºó¶Ë
-4. **ÏìÓ¦×ª»»** ¡ª ½« Trae CN SSE Á÷×ªÎª OpenAI SSE ¸ñÊ½
-5. **ÅÅ¶Ó¼à¿Ø** ¡ª ÊµÊ±¼ì²â²¢±©Â¶ÅÅ¶Ó×´Ì¬
-
-## ÏîÄ¿½á¹¹
-
-```
-traecn_tool/
-©À©¤©¤ cmd/
-©¦   ©¸©¤©¤ trae-proxy/
-©¦       ©¸©¤©¤ main.go              # ³ÌĞòÈë¿Ú
-©À©¤©¤ internal/
-©¦   ©À©¤©¤ auth/
-©¦   ©¦   ©¸©¤©¤ token.go             # Token ÌáÈ¡Óë¹ÜÀí
-©¦   ©À©¤©¤ config/
-©¦   ©¦   ©À©¤©¤ config.go            # ÅäÖÃ¼ÓÔØ
-©¦   ©¦   ©¸©¤©¤ constants.go         # API ³£Á¿Óë¶Ëµã
-©¦   ©À©¤©¤ device/
-©¦   ©¦   ©¸©¤©¤ device.go            # Éè±¸ĞÅÏ¢Ä£Äâ
-©¦   ©À©¤©¤ models/
-©¦   ©¦   ©¸©¤©¤ models.go            # Ä£ĞÍ¶¨Òå
-©¦   ©À©¤©¤ openai/
-©¦   ©¦   ©¸©¤©¤ server.go            # OpenAI ¼æÈİ API ·şÎñ
-©¦   ©À©¤©¤ proxy/
-©¦   ©¦   ©¸©¤©¤ proxy.go             # ºËĞÄ´úÀíÂß¼­
-©¦   ©À©¤©¤ queue/
-©¦   ©¦   ©¸©¤©¤ queue.go             # ÅÅ¶Ó¼à¿Ø
-©¦   ©¸©¤©¤ sse/
-©¦       ©¸©¤©¤ sse.go               # SSE Á÷´¦Àí
-©À©¤©¤ docs/
-©¦   ©¸©¤©¤ PRD.md                   # ²úÆ·ĞèÇóÎÄµµÓëĞ­Òé·ÖÎö
-©À©¤©¤ scripts/
-©¦   ©À©¤©¤ analyze_*.js             # Ğ­Òé·ÖÎö½Å±¾
-©¦   ©¸©¤©¤ find_token.js            # Token ²éÕÒ¹¤¾ß
-©À©¤©¤ .copilot/
-©¦   ©¸©¤©¤ skills/                  # AI ¸¨Öú¿ª·¢¼¼ÄÜ
-©À©¤©¤ config.example.json          # ÅäÖÃÊ¾Àı
-©À©¤©¤ .gitignore
-©À©¤©¤ go.mod
-©¸©¤©¤ README.md
+```bash
+go test ./internal/...
+go build -o trae-proxy.exe ./cmd/trae-proxy
 ```
 
-## Ğ­ÒéÄæÏò·¢ÏÖ
+---
 
-ÔÚ¿ª·¢¹ı³ÌÖĞ£¬ÎÒÃÇ¶Ô Trae CN v1.107.1 ½øĞĞÁËÉîÈëµÄĞ­Òé·ÖÎö£º
+## ä¸Šæ¸¸åè®®è¯´æ˜
 
-### ¹Ø¼ü·¢ÏÖ
+çœŸå®ä¸Šæ¸¸èŠå¤©ç«¯ç‚¹æ˜¯ `/api/ide/v1/llm_raw_chat`ï¼ˆæ—§ `chat_completion` å·² 404ï¼‰ã€‚è¯·æ±‚ä½“ä¸º `{"model_name": ..., "message": <å¯†æ–‡>}`ï¼š`message` æ˜¯æ¶ˆæ¯æ•°ç»„ï¼ˆparts å½¢çŠ¶ï¼‰ç» AES-256-GCM åŠ å¯†åçš„ base64â€”â€”å¯†é’¥ç¡¬ç¼–ç äºå®¢æˆ·ç«¯ï¼Œkey å‰ 8 å­—èŠ‚ä¸éšæœº pin å¼‚æˆ–ï¼Œè¯·æ±‚æ—¶é—´æˆ³ä½œ AADï¼Œå¹¶éœ€æºå¸¦ `get-svc: 1`ã€`X-Request-Pin`ã€`X-Requested-At` å¤´ï¼ˆ4023 `MODEL_NOT_EXISTED` çš„æ ¹å› å°±æ˜¯æ—§ç‰ˆè¯·æ±‚å½¢çŠ¶ä¸å¯¹ï¼Œå·²æ‰“é€šï¼‰ã€‚
 
-- **ÎŞ ASAR ´ò°ü** ¡ª Trae CN µÄ Electron Ó¦ÓÃÎ´Ê¹ÓÃ asar£¬Ô´ÂëÖ±½Ó¿É¶Á
-- **15.8MB server.js** ¡ª AI ºËĞÄÂß¼­¼¯ÖĞÔÚµ¥¸ö»ìÏıµÄ JS ÎÄ¼şÖĞ
-- **ai-agent.dll** ¡ª ¶ÀÁ¢µÄ Rust ¶ş½øÖÆ¸ºÔğÊµ¼Ê HTTP Í¨ĞÅ
-- **TTNet/sscronet** ¡ª Ê¹ÓÃ×Ö½ÚÌø¶¯¶¨ÖÆµÄ Cronet ÍøÂç¿â
-- **Token Ã÷ÎÄ´æ´¢** ¡ª JWT Token ÒÔÃ÷ÎÄ JSON ´æ´¢ÔÚ `storage.json`
-- **ÍêÕû API Ó³Éä** ¡ª ·¢ÏÖ 13+ ¸öºó¶Ë API ¶Ëµã
+è¯¥ç«¯ç‚¹åªæœåŠ¡ `is_preset: true` çš„é¢„è®¾æ¨¡å‹ï¼ˆå®æµ‹ `seed_m8` / `Doubao_1_5_thinking_pro` / `deepseek-R1` / `deepseek-V3` / `deepseek-V3-0324` äº”ä¸ªï¼‰ï¼›ç”¨æˆ·è‡ªå®šä¹‰æ¨¡å‹ï¼ˆ`client_connect` / è‡ªå¸¦ ak çš„æ¡ç›®ï¼‰æ— è®ºå¦‚ä½•éƒ½è¿”å› 4023ï¼Œä¸åœ¨æ”¯æŒèŒƒå›´ã€‚
 
-### API ¼Ü¹¹
-
-```
-extension.js (Node.js À©Õ¹)
-    ? JSON-RPC over AHA IPC
-ai-agent.dll (Rust, ¶Ë¿Ú 40005)
-    ? sscronet/TTNet HTTP
-trae-api-cn.mchost.guru (ºó¶Ë API)
-```
-
-ÍêÕûĞ­Òé·ÖÎöÏê¼û [docs/PRD.md](docs/PRD.md)¡£
-
-## Áé¸ĞÀ´Ô´
-
-±¾ÏîÄ¿ÊÜµ½ÒÔÏÂÍ¬Àà·´´úÏîÄ¿µÄÆô·¢£º
-
-- [cursor-api](https://github.com/lvhkhanh/cursor-api) ¡ª Cursor IDE ·´´ú
-- [kiro-api](https://github.com/nicepkg/kiro-api) ¡ª Kiro IDE ·´´ú
-- [antigravity-proxy](https://github.com/nicepkg/antigravity-proxy) ¡ª Antigravity ·´´ú
-
-## ÃâÔğÉùÃ÷
-
-±¾ÏîÄ¿½ö¹©Ñ§Ï°ÑĞ¾¿Ê¹ÓÃ¡£Ê¹ÓÃ±¾¹¤¾ßÇë×ñÊØ Trae CN µÄ·şÎñÌõ¿î¡£ÇëÎğÓÃÓÚÉÌÒµÓÃÍ¾»ò´ó¹æÄ£ÀÄÓÃ¡£×÷Õß²»¶ÔÈÎºÎÒòÊ¹ÓÃ±¾¹¤¾ßµ¼ÖÂµÄºó¹û¸ºÔğ¡£
-
-## License
-
-MIT
+ä»…ä¾›ä¸ªäººæŠ€æœ¯ç ”ç©¶ã€‚åŸºäº [MIT License](LICENSE)ã€‚

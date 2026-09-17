@@ -6,25 +6,41 @@
 *.dylib
 trae-proxy
 
-# Config with secrets
+# Build Outputs & Dependencies
+**/node_modules/
+**/dist/
+**/release/
+**/build/
+**/out/
+*.tsbuildinfo
+.venv/
+**/__pycache__/
+*.pyc
+
+# Config & Sensitive Data
 config.json
 !config.example.json
+storage.json
+scripts/captured/
+*.bin
 
-# Go
-vendor/
-go.sum
-
-# IDE
+# Trae & IDE
+.trae/
 .vscode/
 .idea/
 *.swp
 *.swo
+
+# Go
+vendor/
+go.sum
 
 # OS
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Temp
+# Temp & Logs
 *.log
 *.tmp
+

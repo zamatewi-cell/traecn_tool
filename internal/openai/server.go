@@ -8,64 +8,109 @@ import (
 	"time"
 
 	"github.com/zamatewi-cell/traecn_tool/internal/models"
+	"github.com/zamatewi-cell/traecn_tool/internal/openai/handlers"
+	"github.com/zamatewi-cell/traecn_tool/internal/openai/middleware"
+	"github.com/zamatewi-cell/traecn_tool/internal/protocol"
 	"github.com/zamatewi-cell/traecn_tool/internal/proxy"
 )
 
 // Server is the OpenAI-compatible API server
 type Server struct {
-	proxy  *proxy.TraeProxy
-	logger *slog.Logger
-	mux    *http.ServeMux
+	proxy   *proxy.TraeProxy
+	logger  *slog.Logger
+	mux     *http.ServeMux
+	apiKeys []string
+	handler http.Handler
+}
+
+// ServerConfig holds server configuration
+type ServerConfig struct {
+	APIKeys []string
 }
 
 // NewServer creates an OpenAI API server
-func NewServer(p *proxy.TraeProxy, logger *slog.Logger) *Server {
+func NewServer(p *proxy.TraeProxy, logger *slog.Logger, config *ServerConfig) *Server {
 	s := &Server{
-		proxy:  p,
-		logger: logger,
-		mux:    http.NewServeMux(),
+		proxy:   p,
+		logger:  logger,
+		mux:     http.NewServeMux(),
+		apiKeys: []string{},
 	}
+
+	if config != nil && len(config.APIKeys) > 0 {
+		s.apiKeys = config.APIKeys
+	}
+
 	s.registerRoutes()
 	return s
 }
 
 func (s *Server) registerRoutes() {
+	// Create handlers
+	chatHandler := handlers.NewChatHandler(s.proxy)
+	completionsHandler := handlers.NewCompletionsHandler()
+	anthropicHandler := protocol.NewAnthropicHandler(s.proxy)
+	responsesHandler := protocol.NewResponsesHandler(s.proxy)
+
+	// Create middlewares
+	corsMiddleware := middleware.NewCORSMiddleware()
+	loggerMiddleware := middleware.NewLoggerMiddleware(s.logger)
+
+	// Create API key auth middleware (optional)
+	var authMiddleware *middleware.APIKeyAuthMiddleware
+	if len(s.apiKeys) > 0 {
+		authMiddleware = middleware.NewAPIKeyAuthMiddleware(s.apiKeys)
+	}
+
+	// Register routes
 	s.mux.HandleFunc("GET /v1/models", s.handleModels)
-	s.mux.HandleFunc("POST /v1/chat/completions", s.handleChatCompletions)
+	s.mux.HandleFunc("POST /v1/chat/completions", chatHandler.HandleChatCompletions)
+	s.mux.HandleFunc("POST /v1/completions", completionsHandler.HandleCompletions)
+	s.mux.HandleFunc("POST /v1/messages", anthropicHandler.HandleMessages)
+	s.mux.HandleFunc("POST /v1/responses", responsesHandler.HandleResponses)
 	s.mux.HandleFunc("GET /v1/queue/status", s.handleQueueStatus)
+	s.mux.HandleFunc("GET /v1/accounts", s.handleAccounts)
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 	s.mux.HandleFunc("GET /", s.handleRoot)
+
+	// Apply middlewares
+	var handler http.Handler = s.mux
+	handler = corsMiddleware.Middleware(handler)
+	handler = loggerMiddleware.Middleware(handler)
+	if authMiddleware != nil {
+		handler = authMiddleware.Middleware(handler)
+	}
+
+	// Store the wrapped handler
+	s.handler = handler
 }
 
 // ServeHTTP implements http.Handler
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-
-	s.mux.ServeHTTP(w, r)
+	s.handler.ServeHTTP(w, r)
 }
 
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	type modelObj struct {
-		ID      string `json:"id"`
-		Object  string `json:"object"`
-		Created int64  `json:"created"`
-		OwnedBy string `json:"owned_by"`
+		ID            string `json:"id"`
+		Object        string `json:"object"`
+		Created       int64  `json:"created"`
+		OwnedBy       string `json:"owned_by"`
+		DisplayName   string `json:"display_name,omitempty"`
+		MaxTokens     int    `json:"max_tokens,omitempty"`
+		ContextWindow int    `json:"context_window,omitempty"`
 	}
 
 	var modelList []modelObj
-	for _, m := range models.KnownModels {
+	for _, m := range models.Default().List() {
 		modelList = append(modelList, modelObj{
-			ID:      m.ConfigName,
-			Object:  "model",
-			Created: time.Now().Unix(),
-			OwnedBy: m.Provider,
+			ID:            m.ModelID,
+			Object:        "model",
+			Created:       time.Now().Unix(),
+			OwnedBy:       m.Provider,
+			DisplayName:   m.DisplayName,
+			MaxTokens:     m.MaxTokens,
+			ContextWindow: m.ContextWindow,
 		})
 	}
 
@@ -74,56 +119,6 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		"data":   modelList,
 	}
 	writeJSON(w, http.StatusOK, resp)
-}
-
-// ChatCompletionRequest is the OpenAI-format chat request
-type ChatCompletionRequest struct {
-	Model       string        `json:"model"`
-	Messages    []ChatMessage `json:"messages"`
-	Stream      bool          `json:"stream"`
-	Temperature *float64      `json:"temperature,omitempty"`
-	MaxTokens   *int          `json:"max_tokens,omitempty"`
-}
-
-// ChatMessage is an OpenAI-format message
-type ChatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-func (s *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
-	var req ChatCompletionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
-		return
-	}
-
-	if req.Model == "" {
-		writeError(w, http.StatusBadRequest, "invalid_request", "model is required")
-		return
-	}
-	if len(req.Messages) == 0 {
-		writeError(w, http.StatusBadRequest, "invalid_request", "messages is required")
-		return
-	}
-
-	s.logger.Info("chat request", "model", req.Model, "stream", req.Stream, "messages", len(req.Messages))
-
-	traeMessages := make([]proxy.Message, len(req.Messages))
-	for i, m := range req.Messages {
-		traeMessages[i] = proxy.Message{Role: m.Role, Content: m.Content}
-	}
-
-	traeReq := &proxy.ChatCompletionRequest{
-		Messages: traeMessages,
-		Model:    req.Model,
-		Stream:   req.Stream,
-	}
-
-	if err := s.proxy.ChatCompletion(traeReq, w); err != nil {
-		s.logger.Error("chat request failed", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
-	}
 }
 
 func (s *Server) handleQueueStatus(w http.ResponseWriter, r *http.Request) {
@@ -135,6 +130,12 @@ func (s *Server) handleQueueStatus(w http.ResponseWriter, r *http.Request) {
 	} else {
 		writeJSON(w, http.StatusOK, monitor.GetAllStatus())
 	}
+}
+
+func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"accounts": s.proxy.TokenPool().GetAccounts(),
+	})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/zamatewi-cell/traecn_tool/internal/protect"
 )
 
 // Config holds global proxy configuration
@@ -12,6 +14,7 @@ type Config struct {
 	ListenAddr string          `json:"listen_addr"`
 	Accounts   []AccountConfig `json:"accounts"`
 	LogLevel   string          `json:"log_level"`
+	Protect    protect.Config  `json:"protect"`
 }
 
 // AccountConfig holds a single Trae CN account config
@@ -19,6 +22,7 @@ type AccountConfig struct {
 	Name        string `json:"name"`
 	StoragePath string `json:"storage_path,omitempty"`
 	Token       string `json:"token,omitempty"`
+	EnvVar      string `json:"env_var,omitempty"`
 	Weight      int    `json:"weight,omitempty"`
 }
 
@@ -27,6 +31,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		ListenAddr: ":9090",
 		LogLevel:   "info",
+		Protect:    protect.DefaultConfig(),
 	}
 }
 

@@ -13,54 +13,92 @@ type Event struct {
 	Data  string
 }
 
-// Reader reads SSE events from a stream
+// Reader reads SSE events from a stream. It is built on bufio.Reader with
+// unbounded line buffering so arbitrarily long data lines survive TCP
+// fragmentation and reassembly ("粘包/断包") without JSON truncation.
 type Reader struct {
-	scanner *bufio.Scanner
+	br *bufio.Reader
 }
 
 // NewReader creates a new SSE reader
 func NewReader(r io.Reader) *Reader {
-	return &Reader{scanner: bufio.NewScanner(r)}
+	return &Reader{br: bufio.NewReaderSize(r, 64*1024)}
 }
 
-// ReadEvent reads the next SSE event
+// readLine reads one line, tolerating very long lines and CRLF endings.
+func (r *Reader) readLine() (string, error) {
+	var sb strings.Builder
+	for {
+		frag, err := r.br.ReadString('\n')
+		sb.WriteString(frag)
+		if err != nil {
+			// Return what we have on EOF so a trailing unterminated
+			// line is still processed.
+			return strings.TrimRight(sb.String(), "\r\n"), err
+		}
+		if strings.HasSuffix(sb.String(), "\n") {
+			return strings.TrimRight(sb.String(), "\r\n"), nil
+		}
+	}
+}
+
+// ReadEvent reads the next SSE event. Comment lines (":...") are skipped,
+// multiple data: lines are joined with "\n" per the SSE spec.
 func (r *Reader) ReadEvent() (*Event, error) {
 	var evt Event
 	hasData := false
 
-	for r.scanner.Scan() {
-		line := r.scanner.Text()
+	for {
+		line, err := r.readLine()
 
 		if line == "" {
+			// Blank line: dispatch buffered event if any.
 			if hasData {
 				return &evt, nil
+			}
+			if err != nil {
+				return nil, io.EOF
 			}
 			continue
 		}
 
-		if strings.HasPrefix(line, "data:") {
-			data := strings.TrimPrefix(line, "data:")
-			data = strings.TrimPrefix(data, " ")
+		if strings.HasPrefix(line, ":") {
+			// Comment / keep-alive line.
+			if err != nil {
+				return nil, io.EOF
+			}
+			continue
+		}
+
+		field, value, found := strings.Cut(line, ":")
+		if !found {
+			// Per spec: line without colon is a field name with empty value.
+			field, value = line, ""
+		} else {
+			value = strings.TrimPrefix(value, " ")
+		}
+
+		switch field {
+		case "data":
 			if hasData {
-				evt.Data += "\n" + data
+				evt.Data += "\n" + value
 			} else {
-				evt.Data = data
+				evt.Data = value
 				hasData = true
 			}
-		} else if strings.HasPrefix(line, "event:") {
-			evt.Event = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
-		} else if strings.HasPrefix(line, "id:") {
-			evt.ID = strings.TrimSpace(strings.TrimPrefix(line, "id:"))
+		case "event":
+			evt.Event = value
+		case "id":
+			evt.ID = value
+		}
+
+		if err != nil {
+			if hasData {
+				return &evt, nil
+			}
+			return nil, io.EOF
 		}
 	}
-
-	if err := r.scanner.Err(); err != nil {
-		return nil, err
-	}
-	if hasData {
-		return &evt, nil
-	}
-	return nil, io.EOF
 }
 
 // Writer writes SSE events to a stream
@@ -76,6 +114,12 @@ func NewWriter(w io.Writer) *Writer {
 // WriteEvent writes an SSE data event
 func (w *Writer) WriteEvent(data string) error {
 	_, err := io.WriteString(w.w, "data: "+data+"\n\n")
+	return err
+}
+
+// WriteNamedEvent writes an SSE event with an explicit event: field.
+func (w *Writer) WriteNamedEvent(event, data string) error {
+	_, err := io.WriteString(w.w, "event: "+event+"\ndata: "+data+"\n\n")
 	return err
 }
 
