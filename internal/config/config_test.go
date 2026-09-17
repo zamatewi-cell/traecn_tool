@@ -10,8 +10,11 @@ import (
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.ListenAddr != ":9090" {
-		t.Errorf("DefaultConfig() ListenAddr = %v, want :9090", cfg.ListenAddr)
+	if cfg.ListenAddr != "127.0.0.1:9090" {
+		t.Errorf("DefaultConfig() ListenAddr = %v, want 127.0.0.1:9090", cfg.ListenAddr)
+	}
+	if cfg.AllowLan != false {
+		t.Errorf("DefaultConfig() AllowLan = %v, want false", cfg.AllowLan)
 	}
 	if cfg.LogLevel != "info" {
 		t.Errorf("DefaultConfig() LogLevel = %v, want info", cfg.LogLevel)

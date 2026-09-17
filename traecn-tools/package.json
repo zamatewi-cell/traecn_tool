@@ -46,6 +46,13 @@
       "electron/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "../trae-proxy.exe",
+        "to": "bin/trae-proxy.exe",
+        "filter": ["**/*"]
+      }
+    ],
     "win": {
       "target": [
         {

@@ -149,7 +149,7 @@ func (h *ChatHandler) handleNonStreaming(w http.ResponseWriter, r *http.Request,
 		PromptTokens:     promptTokens,
 		CompletionTokens: compTokens,
 		TotalTokens:      totalTokens,
-		TTFTMs:           time.Since(startTime).Milliseconds(),
+		TTFTMs:           0, // 非流式请求不伪造 TTFT，置 0 避免污染性能大盘
 		TokensPerSecond:  tps,
 		CachedTokens:     cachedTokens,
 		StatusCode:       statusCode,
@@ -216,6 +216,7 @@ func (h *ChatHandler) handleStreaming(w http.ResponseWriter, r *http.Request, up
 	}
 
 	state := newStreamState()
+	var finishSent bool
 
 	recordCompletion := func(err error) {
 		elapsedSec := time.Since(startTime).Seconds()
@@ -255,6 +256,9 @@ func (h *ChatHandler) handleStreaming(w http.ResponseWriter, r *http.Request, up
 	}
 
 	sendChunk := func(delta *transformers.Delta, finishReason *string) {
+		if finishReason != nil {
+			finishSent = true
+		}
 		resp := transformers.OpenAIResponse{
 			ID:      state.chunkID,
 			Object:  "chat.completion.chunk",
@@ -313,15 +317,20 @@ func (h *ChatHandler) handleStreaming(w http.ResponseWriter, r *http.Request, up
 			sendChunk(&transformers.Delta{ToolCalls: []transformers.DeltaToolCall{dtc}}, nil)
 		case proxy.EventQueue, proxy.EventTaskCreated:
 			// Internal signals: surfaced via /v1/queue/status, not to clients.
-		case proxy.EventUsage:
-			state.usage = evt.Usage
-			if state.finished {
-				sendChunk(&transformers.Delta{}, &state.finishWhy)
-			}
 		case proxy.EventFinish:
 			state.finished = true
 			state.finishWhy = evt.FinishReason
-			sendChunk(&transformers.Delta{}, &state.finishWhy)
+			if !finishSent {
+				sendChunk(&transformers.Delta{}, &state.finishWhy)
+			}
+		case proxy.EventUsage:
+			state.usage = evt.Usage
+			if state.finished && !finishSent {
+				sendChunk(&transformers.Delta{}, &state.finishWhy)
+			} else if finishSent {
+				// 已发送过 finishReason，追加推送带有 Usage 信息的 chunk（choices 不再重复 finishReason）
+				sendChunk(&transformers.Delta{}, nil)
+			}
 		case proxy.EventError:
 			return evt.Err
 		}
@@ -342,7 +351,7 @@ func (h *ChatHandler) handleStreaming(w http.ResponseWriter, r *http.Request, up
 		return
 	}
 
-	if !state.finished {
+	if !finishSent {
 		sendChunk(&transformers.Delta{}, &state.finishWhy)
 	}
 	h.sendDone(w, flusher)

@@ -11,10 +11,13 @@ import (
 
 // Config holds global proxy configuration
 type Config struct {
-	ListenAddr string          `json:"listen_addr"`
-	Accounts   []AccountConfig `json:"accounts"`
-	LogLevel   string          `json:"log_level"`
-	Protect    protect.Config  `json:"protect"`
+	ListenAddr     string          `json:"listen_addr"`
+	AllowLan       bool            `json:"allow_lan,omitempty"`
+	APIKeys        []string        `json:"api_keys,omitempty"`
+	RequestTimeout int             `json:"request_timeout,omitempty"`
+	Accounts       []AccountConfig `json:"accounts"`
+	LogLevel       string          `json:"log_level"`
+	Protect        protect.Config  `json:"protect"`
 }
 
 // AccountConfig holds a single Trae CN account config
@@ -29,7 +32,8 @@ type AccountConfig struct {
 // DefaultConfig returns default configuration
 func DefaultConfig() *Config {
 	return &Config{
-		ListenAddr: ":9090",
+		ListenAddr: "127.0.0.1:9090",
+		AllowLan:   false,
 		LogLevel:   "info",
 		Protect:    protect.DefaultConfig(),
 	}

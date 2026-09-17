@@ -200,7 +200,7 @@ func (s *Server) handleTraeBillingHistory(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": "0.1.0"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": "1.0.0"})
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -224,7 +224,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]string{
 		"name":      "trae-proxy",
-		"version":   "0.1.0",
+		"version":   "1.0.0",
 		"dashboard": "/dashboard",
 		"docs":      "https://github.com/zamatewi-cell/traecn_tool",
 	})
@@ -308,9 +308,16 @@ func (s *Server) handleProxyStats(w http.ResponseWriter, r *http.Request) {
 // ListenAndServe starts the HTTP server
 func (s *Server) ListenAndServe(addr string) error {
 	s.logger.Info("starting OpenAI-compatible API server", "addr", addr)
-	s.logger.Info(fmt.Sprintf("Dashboard: http://localhost%s/", addr))
-	s.logger.Info(fmt.Sprintf("API Base:  http://localhost%s/v1", addr))
-	s.logger.Info(fmt.Sprintf("Models:    http://localhost%s/v1/models", addr))
-	s.logger.Info(fmt.Sprintf("Queue:     http://localhost%s/v1/queue/status", addr))
+	host := addr
+	if strings.HasPrefix(addr, ":") {
+		host = "localhost" + addr
+	} else if strings.HasPrefix(addr, "0.0.0.0:") {
+		host = "127.0.0.1" + strings.TrimPrefix(addr, "0.0.0.0")
+	}
+	baseURL := fmt.Sprintf("http://%s", host)
+	s.logger.Info(fmt.Sprintf("Dashboard: %s/", baseURL))
+	s.logger.Info(fmt.Sprintf("API Base:  %s/v1", baseURL))
+	s.logger.Info(fmt.Sprintf("Models:    %s/v1/models", baseURL))
+	s.logger.Info(fmt.Sprintf("Queue:     %s/v1/queue/status", baseURL))
 	return http.ListenAndServe(addr, s)
 }

@@ -14,11 +14,12 @@ import (
 	"github.com/zamatewi-cell/traecn_tool/internal/proxy"
 )
 
-var version = "0.1.0"
+var version = "1.0.0"
 
 func main() {
 	configPath := flag.String("config", "config.json", "config file path")
-	listen := flag.String("listen", ":9090", "listen address")
+	listen := flag.String("listen", "", "listen address (default: 127.0.0.1:9090, or 0.0.0.0:9090 if allow-lan)")
+	allowLan := flag.Bool("allow-lan", false, "allow access from local area network (bind to 0.0.0.0)")
 	logLevel := flag.String("log-level", "info", "log level (debug/info/warn/error)")
 	showVersion := flag.Bool("version", false, "show version")
 	flag.Parse()
@@ -56,8 +57,38 @@ func main() {
 		logger.Info("using default config (auto-detecting Trae CN token)")
 	}
 
-	if *listen != ":9090" {
+	// Determine allow-lan setting
+	if *allowLan {
+		cfg.AllowLan = true
+	}
+
+	// Determine listen address with security convergence
+	if *listen != "" {
 		cfg.ListenAddr = *listen
+	}
+	if cfg.ListenAddr == "" {
+		if cfg.AllowLan {
+			cfg.ListenAddr = "0.0.0.0:9090"
+		} else {
+			cfg.ListenAddr = "127.0.0.1:9090"
+		}
+	} else {
+		// Convergence check: if not allow-lan but listen is ':port' or '0.0.0.0:port', constrain to 127.0.0.1
+		if !cfg.AllowLan {
+			if len(cfg.ListenAddr) > 0 && cfg.ListenAddr[0] == ':' {
+				logger.Warn("binding to all interfaces without allow_lan is disabled for security, constraining to 127.0.0.1", "original", cfg.ListenAddr)
+				cfg.ListenAddr = "127.0.0.1" + cfg.ListenAddr
+			} else if len(cfg.ListenAddr) >= 8 && cfg.ListenAddr[:8] == "0.0.0.0:" {
+				logger.Warn("binding to 0.0.0.0 without allow_lan is disabled for security, constraining to 127.0.0.1", "original", cfg.ListenAddr)
+				cfg.ListenAddr = "127.0.0.1:" + cfg.ListenAddr[8:]
+			}
+		} else {
+			if len(cfg.ListenAddr) >= 10 && cfg.ListenAddr[:10] == "127.0.0.1:" {
+				cfg.ListenAddr = "0.0.0.0:" + cfg.ListenAddr[10:]
+			} else if len(cfg.ListenAddr) > 0 && cfg.ListenAddr[0] == ':' {
+				cfg.ListenAddr = "0.0.0.0" + cfg.ListenAddr
+			}
+		}
 	}
 
 	// Initialize credential pool with proactive refresh + circuit breaking
@@ -120,7 +151,17 @@ func main() {
 	// Start proxy
 	traeProxy := proxy.NewTraeProxy(tp, logger)
 	traeProxy.SetProtection(cfg.Protect)
-	server := openai.NewServer(traeProxy, logger, nil)
+
+	var srvCfg *openai.ServerConfig
+	if len(cfg.APIKeys) > 0 {
+		srvCfg = &openai.ServerConfig{
+			APIKeys: cfg.APIKeys,
+		}
+		logger.Info("API Key authentication enabled", "keys_count", len(cfg.APIKeys))
+	} else {
+		logger.Info("API Key authentication disabled (open access on local loopback)")
+	}
+	server := openai.NewServer(traeProxy, logger, srvCfg)
 
 	// Best-effort dynamic model registry refresh (falls back to builtin list).
 	go traeProxy.RefreshModelRegistry()

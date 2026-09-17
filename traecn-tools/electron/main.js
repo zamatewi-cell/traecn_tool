@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -13,11 +13,48 @@ const DATA_DIR = path.join(app.getPath('userData'));
 const DATA_FILE = path.join(DATA_DIR, 'traecn-data.json');
 const PROXY_CONFIG_FILE = path.join(DATA_DIR, 'proxy-config.json');
 
+// ===== Safe Storage Helpers (DPAPI Encryption) =====
+function encryptSecret(plaintext) {
+  if (!plaintext || typeof plaintext !== 'string') return plaintext;
+  if (plaintext.startsWith('enc:')) return plaintext;
+  try {
+    if (safeStorage && safeStorage.isEncryptionAvailable()) {
+      const encrypted = safeStorage.encryptString(plaintext);
+      return 'enc:' + encrypted.toString('base64');
+    }
+  } catch (e) {
+    console.warn('safeStorage encrypt failed, falling back to plaintext:', e.message);
+  }
+  return plaintext;
+}
+
+function decryptSecret(ciphertext) {
+  if (!ciphertext || typeof ciphertext !== 'string') return ciphertext;
+  if (!ciphertext.startsWith('enc:')) return ciphertext;
+  try {
+    if (safeStorage && safeStorage.isEncryptionAvailable()) {
+      const base64Str = ciphertext.slice(4);
+      const buffer = Buffer.from(base64Str, 'base64');
+      return safeStorage.decryptString(buffer);
+    }
+  } catch (e) {
+    console.error('safeStorage decrypt failed:', e.message);
+  }
+  return ciphertext;
+}
+
 // ===== Data Store =====
 function loadData() {
   try {
     if (fs.existsSync(DATA_FILE)) {
-      return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+      const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+      if (parsed.accounts && Array.isArray(parsed.accounts)) {
+        parsed.accounts.forEach(acc => {
+          if (acc.token) acc.token = decryptSecret(acc.token);
+          if (acc.refreshToken) acc.refreshToken = decryptSecret(acc.refreshToken);
+        });
+      }
+      return parsed;
     }
   } catch (e) {
     console.error('Failed to load data:', e);
@@ -48,7 +85,15 @@ function saveData(data) {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+    // Deep clone data to avoid mutating memory state
+    const dataToSave = JSON.parse(JSON.stringify(data));
+    if (dataToSave.accounts && Array.isArray(dataToSave.accounts)) {
+      dataToSave.accounts.forEach(acc => {
+        if (acc.token) acc.token = encryptSecret(acc.token);
+        if (acc.refreshToken) acc.refreshToken = encryptSecret(acc.refreshToken);
+      });
+    }
+    fs.writeFileSync(DATA_FILE, JSON.stringify(dataToSave, null, 2), 'utf8');
   } catch (e) {
     console.error('Failed to save data:', e);
   }
@@ -125,8 +170,8 @@ function startOAuthLogin(deviceInfo) {
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end(`<!DOCTYPE html><html><body style="background:#0a0e1a;color:white;display:flex;justify-content:center;align-items:center;height:100vh;font-family:sans-serif">
             <div style="text-align:center">
-              <h1>? µÇÂ¼³É¹¦</h1>
-              <p>Äú¿ÉÒÔ¹Ø±Õ´Ë´°¿Ú²¢·µ»Ø TraeCN Tools</p>
+              <h1>? ç™»å½•æˆåŠŸ</h1>
+              <p>æ‚¨å¯ä»¥å…³é—­æ­¤çª—å£å¹¶è¿”å› TraeCN Tools</p>
             </div>
           </body></html>`);
 
@@ -176,7 +221,7 @@ function startOAuthLogin(deviceInfo) {
       // Set timeout for login
       setTimeout(() => {
         server.close();
-        reject(new Error('µÇÂ¼³¬Ê±£¨5·ÖÖÓ£©'));
+        reject(new Error('ç™»å½•è¶…æ—¶ï¼ˆ5åˆ†é’Ÿï¼‰'));
       }, 5 * 60 * 1000);
     });
 
@@ -228,11 +273,19 @@ function startProxyService(config) {
   }
 
   // Write proxy config
+  const isLan = !!config.allowLan;
+  const listenHost = isLan ? '0.0.0.0' : '127.0.0.1';
   const proxyConfig = {
-    listen_addr: `:${config.listenPort}`,
+    listen_addr: `${listenHost}:${config.listenPort || 8045}`,
+    allow_lan: isLan,
     log_level: 'info',
+    request_timeout: config.requestTimeout || 120,
     accounts: [],
   };
+
+  if (config.authEnabled && config.apiKey) {
+    proxyConfig.api_keys = [config.apiKey];
+  }
 
   const data = loadData();
   const activeAccounts = data.accounts.filter(a => !a.disabled && a.token);
@@ -249,6 +302,10 @@ function startProxyService(config) {
   // Try to find the Go binary
   const binaryName = process.platform === 'win32' ? 'trae-proxy.exe' : 'trae-proxy';
   const binaryPaths = [
+    ...(process.resourcesPath ? [
+      path.join(process.resourcesPath, 'bin', binaryName),
+      path.join(process.resourcesPath, binaryName),
+    ] : []),
     path.join(app.getAppPath(), '..', binaryName),
     path.join(app.getAppPath(), binaryName),
     path.join(process.cwd(), binaryName),
@@ -264,7 +321,7 @@ function startProxyService(config) {
   }
 
   if (!binaryPath) {
-    return { success: false, error: 'Î´ÕÒµ½´úÀí·şÎñ¶ş½øÖÆÎÄ¼ş (trae-proxy.exe)' };
+    return { success: false, error: 'æœªæ‰¾åˆ°ä»£ç†æœåŠ¡äºŒè¿›åˆ¶æ–‡ä»¶ (trae-proxy.exe)' };
   }
 
   try {
@@ -303,7 +360,7 @@ function stopProxyService() {
     proxyProcess = null;
     return { success: true };
   }
-  return { success: false, error: '·şÎñÎ´ÔËĞĞ' };
+  return { success: false, error: 'æœåŠ¡æœªè¿è¡Œ' };
 }
 
 // ===== Window Management =====
@@ -361,7 +418,7 @@ function setupIPC() {
 
   ipcMain.handle('read-trae-storage', (_, storagePath) => {
     const result = readTraeStorage(storagePath);
-    return result ? { success: true, data: result } : { success: false, error: 'Î´ÕÒµ½ Trae CN ÈÏÖ¤ĞÅÏ¢' };
+    return result ? { success: true, data: result } : { success: false, error: 'æœªæ‰¾åˆ° Trae CN è®¤è¯ä¿¡æ¯' };
   });
 
   ipcMain.handle('import-accounts', (_, filePath) => {
