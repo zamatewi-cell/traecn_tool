@@ -24,13 +24,17 @@ function encryptSecret(plaintext) {
       const encrypted = safeStorage.encryptString(plaintext);
       return 'enc:' + encrypted.toString('base64');
     } catch (e) {
-      // 遵循 Fail-Closed 原则：加密失败立即抛出错误，严禁静默写明文
-      throw new Error(`安全存储(safeStorage/DPAPI)加密失败: ${e.message}`);
+      throw new Error(`安全存储(safeStorage/DPAPI)加密失败，拒绝写入磁盘: ${e.message}`);
     }
   }
-  // 若环境不支持 safeStorage（如 Linux 无密钥环或自动化纯命令行沙盒）
-  console.warn('当前运行环境未提供 safeStorage 安全存储能力，凭证将以明文保存');
-  return plaintext;
+
+  // 严格 Fail-Closed：若系统安全存储不可用，默认严格拒绝明文落盘，杜绝静默泄露
+  if (process.env.ALLOW_INSECURE_PLAINTEXT_STORAGE === 'true') {
+    console.warn('警告: 显式开启了 ALLOW_INSECURE_PLAINTEXT_STORAGE，凭据将以不安全的明文形式落盘');
+    return plaintext;
+  }
+
+  throw new Error('系统安全存储(safeStorage/DPAPI)当前不可用，为防止账号凭据意外泄露已拒绝落盘。若在无密钥环的特殊调试沙盒中运行，请显式声明 ALLOW_INSECURE_PLAINTEXT_STORAGE=true');
 }
 
 function decryptSecret(ciphertext) {

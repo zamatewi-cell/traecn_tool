@@ -35,10 +35,21 @@ func main() {
 	fmt.Println("-> 校验 LAN 模式无鉴权拦截...")
 	cmdLanBlock := exec.Command("./trae-proxy.exe", "-allow-lan")
 	outLanBlock, _ := cmdLanBlock.CombinedOutput()
-	if strings.Contains(string(outLanBlock), "FATAL: allow_lan is enabled but no api_keys are configured") {
+	if strings.Contains(string(outLanBlock), "no api_keys are configured") {
 		fmt.Println("✔ [LAN防呆] allow_lan 且未配 key 时成功安全早停拦截")
 	} else {
 		fmt.Printf("❌ LAN 防呆未触发，输出:\n%s\n", string(outLanBlock))
+		os.Exit(1)
+	}
+
+	// 2.2 验证非 loopback 地址（如 192.168.1.10:9099）无 Key 无法绕过安全检查
+	fmt.Println("-> 校验非 Loopback 监听地址防绕过拦截...")
+	cmdNonLoopback := exec.Command("./trae-proxy.exe", "-listen", "192.168.1.10:9099")
+	outNonLoopback, _ := cmdNonLoopback.CombinedOutput()
+	if strings.Contains(string(outNonLoopback), "non-loopback address") && strings.Contains(string(outNonLoopback), "no api_keys are configured") {
+		fmt.Println("✔ [IP安全收敛] 非 loopback 绑定 (192.168.1.10) 且未配 key 时被严格拦截，无法绕过！")
+	} else {
+		fmt.Printf("❌ 非 loopback 防绕过拦截未触发，输出:\n%s\n", string(outNonLoopback))
 		os.Exit(1)
 	}
 
@@ -125,6 +136,28 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf("✔ [鉴权通过] 携带 stdin 管道配置的 API Key 成功通过认证\n")
+
+	// 5.1 验证 CORS OPTIONS 预检请求不携带 API Key 时被正常放行（非 401 拦截）
+	reqOptions, _ := http.NewRequest(http.MethodOptions, baseURL+"/v1/chat/completions", nil)
+	reqOptions.Header.Set("Origin", "http://localhost:5173")
+	reqOptions.Header.Set("Access-Control-Request-Method", "POST")
+	reqOptions.Header.Set("Access-Control-Request-Headers", "authorization,content-type")
+	respOptions, err := http.DefaultClient.Do(reqOptions)
+	if err != nil {
+		fmt.Printf("❌ OPTIONS 预检请求失败: %v\n", err)
+		os.Exit(1)
+	}
+	respOptions.Body.Close()
+	if respOptions.StatusCode == http.StatusUnauthorized {
+		fmt.Printf("❌ OPTIONS 预检请求被 401 拦截！\n")
+		os.Exit(1)
+	}
+	if respOptions.StatusCode != http.StatusOK && respOptions.StatusCode != http.StatusNoContent {
+		fmt.Printf("❌ OPTIONS 预检请求期望 200/204，实际: %d\n", respOptions.StatusCode)
+		os.Exit(1)
+	}
+	corsHeader := respOptions.Header.Get("Access-Control-Allow-Origin")
+	fmt.Printf("✔ [CORS放行] OPTIONS 预检请求成功放行无 401 (Status: %d, Allow-Origin: %s)\n", respOptions.StatusCode, corsHeader)
 
 	// 6. 验证流式响应 finish_reason 单发保护
 	streamReqBody := `{

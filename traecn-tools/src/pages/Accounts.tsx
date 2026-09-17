@@ -118,8 +118,21 @@ export default function Accounts() {
     setLabelInput('');
   };
 
+  const maskSecret = (secret?: string) => {
+    if (!secret) return secret;
+    if (secret.length <= 10) return '*** (已脱敏)';
+    return `${secret.slice(0, 6)}***${secret.slice(-4)} (已脱敏保护)`;
+  };
+
+  const sanitizeAccountForExport = (acc: any) => ({
+    ...acc,
+    token: acc.token ? maskSecret(acc.token) : acc.token,
+    refreshToken: acc.refreshToken ? maskSecret(acc.refreshToken) : acc.refreshToken,
+  });
+
   const handleExport = () => {
-    const data = JSON.stringify(accounts, null, 2);
+    const sanitized = accounts.map(sanitizeAccountForExport);
+    const data = JSON.stringify(sanitized, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -297,7 +310,8 @@ export default function Accounts() {
                   <ActionButton icon={<ArrowRightLeft size={14} />} title="切换到此账号" onClick={() => switchAccount(account.id)} />
                   <ActionButton icon={<Flame size={14} />} title="预热" onClick={() => {}} />
                   <ActionButton icon={<Download size={14} />} title="导出" onClick={() => {
-                    const data = JSON.stringify(account, null, 2);
+                    const sanitized = sanitizeAccountForExport(account);
+                    const data = JSON.stringify(sanitized, null, 2);
                     const blob = new Blob([data], { type: 'application/json' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');

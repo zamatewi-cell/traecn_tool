@@ -75,12 +75,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const data = await api().loadData();
       const current = data.accounts.find((a: Account) => a.isCurrent);
+      const mergedConfig = { ...get().proxyConfig, ...data.proxyConfig };
       set({
         accounts: data.accounts || [],
-        proxyConfig: { ...get().proxyConfig, ...data.proxyConfig },
+        proxyConfig: mergedConfig,
         currentAccountId: current?.id || null,
         loading: false,
       });
+
+      // 同步配置到单例 apiClient (URL 与 API Key)
+      const url = `http://127.0.0.1:${mergedConfig.listenPort}`;
+      apiClient.setBaseUrl(url);
+      apiClient.setApiKey(mergedConfig.authEnabled && mergedConfig.apiKey ? mergedConfig.apiKey : '');
+      set({ backendUrl: url });
 
       // Check proxy status
       const status = await api().proxyStatus();
@@ -90,7 +97,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       api().onProxyLog((log: string) => get().addProxyLog(log));
       api().onProxyStatus((status: { running: boolean }) => set({ proxyRunning: status.running }));
 
-      // Check backend health
+      // Check backend health and fetch models with auth
       await get().checkBackendHealth();
       await get().fetchAvailableModels();
     } catch (e) {
@@ -145,9 +152,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   updateProxyConfig: (updates) => {
-    set((state) => ({
-      proxyConfig: { ...state.proxyConfig, ...updates },
-    }));
+    set((state) => {
+      const updated = { ...state.proxyConfig, ...updates };
+      const url = `http://127.0.0.1:${updated.listenPort}`;
+      apiClient.setBaseUrl(url);
+      apiClient.setApiKey(updated.authEnabled && updated.apiKey ? updated.apiKey : '');
+      return {
+        proxyConfig: updated,
+        backendUrl: url,
+      };
+    });
     get().save();
   },
 
@@ -184,6 +198,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const { proxyConfig } = get();
     const url = `http://127.0.0.1:${proxyConfig.listenPort}`;
     apiClient.setBaseUrl(url);
+    apiClient.setApiKey(proxyConfig.authEnabled && proxyConfig.apiKey ? proxyConfig.apiKey : '');
     set({ backendUrl: url });
     
     try {
@@ -198,6 +213,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const { proxyConfig } = get();
     const url = `http://127.0.0.1:${proxyConfig.listenPort}`;
     apiClient.setBaseUrl(url);
+    apiClient.setApiKey(proxyConfig.authEnabled && proxyConfig.apiKey ? proxyConfig.apiKey : '');
     
     try {
       const result = await apiClient.getModels();

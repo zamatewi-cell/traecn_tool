@@ -24,14 +24,23 @@ func NewAPIKeyAuthMiddleware(apiKeys []string) *APIKeyAuthMiddleware {
 // Middleware wraps the handler with API key authentication
 func (m *APIKeyAuthMiddleware) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip authentication for health check and root endpoints
-		if r.URL.Path == "/health" || r.URL.Path == "/" {
+		// Skip authentication for CORS preflight OPTIONS requests
+		if r.Method == http.MethodOptions {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		// Check for API key in Authorization header
+		// Skip authentication for public UI and health check endpoints
+		if r.URL.Path == "/health" || r.URL.Path == "/" || r.URL.Path == "/dashboard" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Check for API key in Authorization or x-api-key header
 		authHeader := r.Header.Get("Authorization")
+		if authHeader == "" {
+			authHeader = r.Header.Get("x-api-key")
+		}
 		if authHeader == "" {
 			http.Error(w, `{"error": {"message": "Missing Authorization header", "type": "authentication_error"}}`, http.StatusUnauthorized)
 			return

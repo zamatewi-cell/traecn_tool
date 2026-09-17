@@ -41,12 +41,25 @@
         <div>
           <div class="font-bold text-base tracking-tight flex items-center gap-2">
             <span>Trae Proxy 控制台</span>
-            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">v0.1.0</span>
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">v1.0.0</span>
           </div>
           <p class="text-xs text-zinc-400">OpenAI / Anthropic / Codex 兼容网关</p>
         </div>
       </div>
-      <div class="flex items-center space-x-4">
+      <div class="flex items-center space-x-3">
+        <!-- 鉴权 API Key 输入胶囊 (sessionStorage 持久化) -->
+        <div class="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-zinc-800/80 border border-zinc-700/50 text-xs">
+          <span class="text-zinc-400 font-medium flex items-center gap-1">
+            <svg class="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+            <span>Key:</span>
+          </span>
+          <input id="nav-api-key" type="password" placeholder="未设置(本地开放)" 
+                 class="w-32 bg-zinc-950/80 border border-zinc-700/60 rounded px-2 py-0.5 text-xs text-cyan-400 font-mono focus:outline-none focus:border-cyan-400"
+                 title="输入网关配置的 API Key（保存在本地会话中）"
+                 onchange="updateDashboardApiKey(this.value)" />
+          <button onclick="toggleKeyVisibility()" class="text-zinc-400 hover:text-zinc-200 text-xs px-1" title="切换可见">👁</button>
+        </div>
+
         <!-- Trae 官方账号与积分胶囊 -->
         <div id="trae-user-badge" class="flex items-center space-x-2.5 px-3 py-1.5 rounded-xl bg-zinc-800/80 border border-zinc-700/50 text-xs">
           <div class="w-5 h-5 rounded-full bg-emerald-500/20 flex items-center justify-center text-[11px] font-bold text-emerald-400" id="user-avatar-initial">U</div>
@@ -165,7 +178,7 @@
             </button>
           </div>
           <div class="bg-zinc-950 border border-zinc-800/80 rounded-xl p-3 font-mono text-sm text-cyan-400 break-all select-all flex items-center justify-between" id="api-key-box">
-            <span id="api-key-text">sk-trae-proxy-local-dev</span>
+            <span id="api-key-text">未设置 (本地无需Key或在顶部填入)</span>
             <button onclick="copyToClipboard('api-key-text', 'key-copy-badge')" class="p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors ml-2" title="复制密钥">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
             </button>
@@ -203,7 +216,7 @@
           <p class="text-[11px] text-zinc-400">设置 &rarr; 模型服务 &rarr; 添加 OpenAI 格式服务商</p>
           <div class="text-[11px] font-mono text-zinc-300 bg-zinc-900 p-2 rounded border border-zinc-800/60 space-y-1">
             <div>BaseURL: <span class="text-emerald-400">http://127.0.0.1:9090/v1</span></div>
-            <div>Key: <span class="text-cyan-400">sk-trae-proxy-local-dev</span></div>
+            <div>Key: <span class="text-cyan-400">填入配置的Key或任意非空</span></div>
             <div>推荐模型: <span class="text-zinc-100">DeepSeek-V4.1-Flash</span></div>
           </div>
         </div>
@@ -497,7 +510,62 @@
       'deepseek-V3-0324'
     ];
 
+    // ===== API Key 鉴权与全局 apiFetch =====
+    function getStoredApiKey() {
+      return sessionStorage.getItem('trae_proxy_api_key') || '';
+    }
+
+    function updateDashboardApiKey(val) {
+      val = (val || '').trim();
+      if (val) {
+        sessionStorage.setItem('trae_proxy_api_key', val);
+      } else {
+        sessionStorage.removeItem('trae_proxy_api_key');
+      }
+      const navInput = document.getElementById('nav-api-key');
+      if (navInput && navInput.value !== val) navInput.value = val;
+      const keyBox = document.getElementById('api-key-text');
+      if (keyBox) {
+        keyBox.textContent = val || '未设置 (本地无需Key或在顶部填入)';
+      }
+      loadModels();
+      refreshTraeProfile();
+      loadLiveLogsFromBackend(1);
+    }
+
+    function toggleKeyVisibility() {
+      const input = document.getElementById('nav-api-key');
+      if (input) {
+        input.type = input.type === 'password' ? 'text' : 'password';
+      }
+    }
+
+    async function apiFetch(url, options = {}) {
+      const key = getStoredApiKey();
+      const headers = new Headers(options.headers || {});
+      if (key && !headers.has('Authorization')) {
+        headers.set('Authorization', 'Bearer ' + key);
+      }
+      options.headers = headers;
+      const res = await fetch(url, options);
+      if (res.status === 401) {
+        console.warn('请求被 401 拦截：网关已开启 API Key 保护，请在顶部设置 Key');
+        const navInput = document.getElementById('nav-api-key');
+        if (navInput && !navInput.value) {
+          navInput.classList.add('border-rose-500', 'animate-pulse');
+          setTimeout(() => navInput.classList.remove('animate-pulse'), 3000);
+        }
+      }
+      return res;
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
+      const storedKey = getStoredApiKey();
+      const navInput = document.getElementById('nav-api-key');
+      if (navInput && storedKey) navInput.value = storedKey;
+      const keyBox = document.getElementById('api-key-text');
+      if (keyBox && storedKey) keyBox.textContent = storedKey;
+
       checkHealth();
       loadModels();
       refreshTraeProfile();
@@ -521,7 +589,7 @@
 
     async function refreshTraeProfile() {
       try {
-        const res = await fetch('/v1/trae/profile');
+        const res = await apiFetch('/v1/trae/profile');
         if (!res.ok) return;
         const profile = await res.json();
 
@@ -590,7 +658,7 @@
     async function loadModels() {
       const container = document.getElementById('models-container');
       try {
-        const res = await fetch('/v1/models');
+        const res = await apiFetch('/v1/models');
         const json = await res.json();
         allModels = json.data || [];
         renderModels();
@@ -712,7 +780,7 @@
       for (let i = 0; i < 24; i++) {
         key += chars.charAt(Math.floor(Math.random() * chars.length));
       }
-      document.getElementById('api-key-text').innerText = key;
+      updateDashboardApiKey(key);
     }
 
     function toggleConnectGuide() {
@@ -783,11 +851,10 @@
       let ttftMs = 0;
 
       try {
-        const response = await fetch('/v1/chat/completions', {
+        const response = await apiFetch('/v1/chat/completions', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer sk-trae-proxy-local-dev'
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             model: model,
@@ -923,7 +990,7 @@
       currentLivePage = page || 1;
       const tbody = document.getElementById('live-logs-body');
       try {
-        const res = await fetch('/v1/proxy/logs?page=' + currentLivePage + '&page_size=' + LIVE_PAGE_SIZE);
+        const res = await apiFetch('/v1/proxy/logs?page=' + currentLivePage + '&page_size=' + LIVE_PAGE_SIZE);
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
         const logs = data.logs || [];
@@ -986,7 +1053,7 @@
     async function clearSQLiteLogs() {
       if (!confirm('确定要清空本地 SQLite 数据库中的所有会话流水吗？此操作无法撤销。')) return;
       try {
-        const res = await fetch('/v1/proxy/logs', { method: 'DELETE' });
+        const res = await apiFetch('/v1/proxy/logs', { method: 'DELETE' });
         if (res.ok) {
           loadLiveLogsFromBackend(1);
         } else {
@@ -999,7 +1066,7 @@
 
     async function exportLogsJSON() {
       try {
-        const res = await fetch('/v1/proxy/logs?page=1&page_size=1000');
+        const res = await apiFetch('/v1/proxy/logs?page=1&page_size=1000');
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
         const blob = new Blob([JSON.stringify(data.logs || [], null, 2)], { type: 'application/json' });
@@ -1039,7 +1106,7 @@
       const tbody = document.getElementById('cloud-billing-body');
       tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-zinc-500 font-sans">正在拉取 Trae 官方会话账单...</td></tr>';
       try {
-        const res = await fetch('/v1/trae/billing_history?page=1&page_size=20');
+        const res = await apiFetch('/v1/trae/billing_history?page=1&page_size=20');
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
         const records = data.records || [];

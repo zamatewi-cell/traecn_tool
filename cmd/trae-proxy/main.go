@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,63 @@ import (
 	"github.com/zamatewi-cell/traecn_tool/internal/proxy"
 	"github.com/zamatewi-cell/traecn_tool/internal/version"
 )
+
+// isLoopbackHost checks if host is a loopback address (127.0.0.0/8, ::1, or localhost)
+func isLoopbackHost(host string) bool {
+	if host == "" {
+		return false // empty host (e.g. ":9090") means all interfaces
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false // unknown hostname or invalid IP, treat as non-loopback
+	}
+	return ip.IsLoopback()
+}
+
+// sanitizeListenAddr determines the final listen address and whether it exposes the server
+// to external/LAN networks (i.e. non-loopback).
+func sanitizeListenAddr(addr string, allowLan bool, logger *slog.Logger) (string, bool) {
+	if addr == "" {
+		if allowLan {
+			return "0.0.0.0:9090", true
+		}
+		return "127.0.0.1:9090", false
+	}
+
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		if strings.HasPrefix(addr, ":") {
+			host = ""
+			port = strings.TrimPrefix(addr, ":")
+		} else {
+			host = addr
+			port = "9090"
+		}
+	}
+
+	// Empty host (e.g. ":9090") binds to all network interfaces on the machine (INADDR_ANY / IPv6 wildcard)
+	if host == "" {
+		return net.JoinHostPort("0.0.0.0", port), true
+	}
+
+	isLoopback := isLoopbackHost(host)
+
+	// If allow_lan is explicitly enabled but user specified a loopback host, expand to 0.0.0.0
+	if allowLan && isLoopback {
+		return net.JoinHostPort("0.0.0.0", port), true
+	}
+
+	// If host is not loopback (e.g. 192.168.x.x, 10.x.x.x, 0.0.0.0, [::]), it is definitively a LAN exposure.
+	if !isLoopback {
+		return net.JoinHostPort(host, port), true
+	}
+
+	// Pure loopback address (127.0.0.1, localhost, etc.)
+	return net.JoinHostPort(host, port), false
+}
 
 func parseLogLevel(levelStr string) slog.Level {
 	switch strings.ToLower(levelStr) {
@@ -95,40 +153,20 @@ func main() {
 		cfg.AllowLan = true
 	}
 
-	// Safety check: prevent accidental LAN exposure without API Key authentication
-	if cfg.AllowLan && len(cfg.APIKeys) == 0 && !cfg.InsecureNoAuth && !*insecureNoAuth {
-		logger.Error("FATAL: allow_lan is enabled but no api_keys are configured! Binding to 0.0.0.0 without authentication is insecure and rejected.")
-		logger.Error("To fix: configure 'api_keys' in configuration, or explicitly pass -insecure-no-auth if you really want to expose without auth.")
-		os.Exit(1)
-	}
-
-	// Determine listen address with security convergence
+	// Apply CLI listen flag override if provided
 	if *listen != "" {
 		cfg.ListenAddr = *listen
 	}
-	if cfg.ListenAddr == "" {
-		if cfg.AllowLan {
-			cfg.ListenAddr = "0.0.0.0:9090"
-		} else {
-			cfg.ListenAddr = "127.0.0.1:9090"
-		}
-	} else {
-		// Convergence check: if not allow-lan but listen is ':port' or '0.0.0.0:port', constrain to 127.0.0.1
-		if !cfg.AllowLan {
-			if len(cfg.ListenAddr) > 0 && cfg.ListenAddr[0] == ':' {
-				logger.Warn("binding to all interfaces without allow_lan is disabled for security, constraining to 127.0.0.1", "original", cfg.ListenAddr)
-				cfg.ListenAddr = "127.0.0.1" + cfg.ListenAddr
-			} else if len(cfg.ListenAddr) >= 8 && cfg.ListenAddr[:8] == "0.0.0.0:" {
-				logger.Warn("binding to 0.0.0.0 without allow_lan is disabled for security, constraining to 127.0.0.1", "original", cfg.ListenAddr)
-				cfg.ListenAddr = "127.0.0.1:" + cfg.ListenAddr[8:]
-			}
-		} else {
-			if len(cfg.ListenAddr) >= 10 && cfg.ListenAddr[:10] == "127.0.0.1:" {
-				cfg.ListenAddr = "0.0.0.0:" + cfg.ListenAddr[10:]
-			} else if len(cfg.ListenAddr) > 0 && cfg.ListenAddr[0] == ':' {
-				cfg.ListenAddr = "0.0.0.0" + cfg.ListenAddr
-			}
-		}
+
+	// Enforce IP-level loopback security convergence
+	resolvedAddr, isLAN := sanitizeListenAddr(cfg.ListenAddr, cfg.AllowLan, logger)
+	cfg.ListenAddr = resolvedAddr
+
+	// Safety check: prevent network exposure without API Key authentication
+	if isLAN && len(cfg.APIKeys) == 0 && !cfg.InsecureNoAuth && !*insecureNoAuth {
+		logger.Error("FATAL: server is configured to bind to a non-loopback address ("+resolvedAddr+") but no api_keys are configured! Binding to network interfaces without authentication is insecure and rejected.")
+		logger.Error("To fix: configure 'api_keys' in configuration, or explicitly pass -insecure-no-auth if you really want to expose without auth.")
+		os.Exit(1)
 	}
 
 	// Initialize credential pool with proactive refresh + circuit breaking
