@@ -67,7 +67,7 @@ func TestTraeProxy_E2E_HeadersAndBody(t *testing.T) {
 		finish := ""
 		var usage *Usage
 		err := p.ChatCompletion(&ChatCompletionRequest{
-			ModelName: "Seed-Code",
+			ModelName: "seed_m8",
 			Messages:  []Message{{Role: "user", Content: "hello"}},
 			Stream:    true,
 		}, func(evt *StreamEvent) error {
@@ -197,7 +197,7 @@ func TestTraeProxy_E2E_NonStreamJSON(t *testing.T) {
 		var content string
 		var usage *Usage
 		err := p.ChatCompletion(&ChatCompletionRequest{
-			ModelName: "Seed-Code",
+			ModelName: "seed_m8",
 			Messages:  []Message{{Role: "user", Content: "hi"}},
 			Stream:    false,
 		}, func(evt *StreamEvent) error {

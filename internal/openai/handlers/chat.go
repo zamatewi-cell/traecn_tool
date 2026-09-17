@@ -180,6 +180,13 @@ func (h *ChatHandler) handleStreaming(w http.ResponseWriter, upstreamReq *proxy.
 			Model:   model,
 			Choices: []transformers.Choice{{Index: 0, Delta: delta, FinishReason: finishReason}},
 		}
+		if state.usage != nil {
+			resp.Usage = &transformers.Usage{
+				PromptTokens:     state.usage.PromptTokens,
+				CompletionTokens: state.usage.CompletionTokens,
+				TotalTokens:      state.usage.TotalTokens,
+			}
+		}
 		h.sendSSE(w, flusher, resp)
 	}
 
@@ -212,6 +219,9 @@ func (h *ChatHandler) handleStreaming(w http.ResponseWriter, upstreamReq *proxy.
 			// Internal signals: surfaced via /v1/queue/status, not to clients.
 		case proxy.EventUsage:
 			state.usage = evt.Usage
+			if state.finished {
+				sendChunk(&transformers.Delta{}, &state.finishWhy)
+			}
 		case proxy.EventFinish:
 			state.finished = true
 			state.finishWhy = evt.FinishReason

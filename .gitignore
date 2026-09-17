@@ -23,6 +23,11 @@ config.json
 storage.json
 scripts/captured/
 *.bin
+*token*.txt
+scripts/temp_*.json
+
+# Agents & Workflows
+.agents/
 
 # Trae & IDE
 .trae/

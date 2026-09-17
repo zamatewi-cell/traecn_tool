@@ -115,7 +115,9 @@ func TestRequestTransformer_mapModel_KnownModels(t *testing.T) {
 		openAIModel string
 		wantTraeID  string
 	}{
-		{"deepseek-r1", "DeepSeek-V4-Pro"},
+		{"deepseek-reasoner", "DeepSeek-V4-Pro"},
+		{"deepseek-R1", "deepseek-R1"},
+		{"seed_m8", "seed_m8"},
 		{"deepseek-chat", "DeepSeek-V4-Flash"},
 		{"glm", "GLM-5.3"},
 		{"qwen", "Qwen3.7-Plus"},

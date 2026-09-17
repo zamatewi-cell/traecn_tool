@@ -182,3 +182,31 @@ func TestRegistry_RefreshFromCapturedSample(t *testing.T) {
 		t.Error("registry shrank after refresh")
 	}
 }
+
+func TestDefaultRegistry_21Models(t *testing.T) {
+	d := Default()
+	list := d.List()
+	if len(list) != 21 {
+		t.Fatalf("Default() registry has %d models, want 21", len(list))
+	}
+
+	// Verify all 5 preset models exist
+	for _, p := range PresetModelNames {
+		m := d.Get(p)
+		if m == nil {
+			t.Errorf("Preset model %s missing from default registry", p)
+		} else if m.Channel != ChannelLegacyHTTPS {
+			t.Errorf("Preset model %s channel = %v, want ChannelLegacyHTTPS", p, m.Channel)
+		}
+	}
+
+	// Verify all 16 builtin models exist
+	for _, b := range requiredModels {
+		m := d.Get(b.id)
+		if m == nil {
+			t.Errorf("Builtin model %s missing from default registry", b.id)
+		} else if m.Channel != ChannelAgentTask {
+			t.Errorf("Builtin model %s channel = %v, want ChannelAgentTask", b.id, m.Channel)
+		}
+	}
+}

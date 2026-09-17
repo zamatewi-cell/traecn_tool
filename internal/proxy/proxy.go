@@ -89,6 +89,8 @@ func (p *TraeProxy) TokenPool() *auth.Pool {
 func (p *TraeProxy) ChatCompletion(req *ChatCompletionRequest, handle StreamHandler) error {
 	p.applyProtection(req)
 
+	channel := models.ResolveChannel(req.ModelName)
+
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		token, accountName, err := p.tokens.GetToken()
@@ -96,10 +98,15 @@ func (p *TraeProxy) ChatCompletion(req *ChatCompletionRequest, handle StreamHand
 			return fmt.Errorf("failed to get token: %w", err)
 		}
 		if attempt == 0 {
-			p.logger.Info("using account", "account", accountName, "model", req.ModelName)
+			p.logger.Info("using account", "account", accountName, "model", req.ModelName, "channel", channel)
 		}
 
-		status, err := p.doChatCompletion(req, token, handle)
+		var status int
+		if channel == models.ChannelAgentTask {
+			status, err = p.doAgentTaskCompletion(req, token, handle)
+		} else {
+			status, err = p.doChatCompletion(req, token, handle)
+		}
 		if err == nil {
 			p.tokens.ReportSuccess(accountName)
 			return nil

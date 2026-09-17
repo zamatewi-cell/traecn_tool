@@ -156,7 +156,7 @@ func TestChatHandler_StreamingToolCalls(t *testing.T) {
 		io.WriteString(w, "data: [DONE]\n\n")
 	}, func(h *ChatHandler, gotBody *map[string]interface{}) {
 		rec := postChat(t, h, `{
-		  "model":"Seed-Code",
+		  "model":"seed_m8",
 		  "messages":[{"role":"user","content":"read a.go"}],
 		  "stream":true,
 		  "tools":[{"type":"function","function":{"name":"read_file","description":"read a file","parameters":{"type":"object","properties":{"path":{"type":"string"}}}}}],
@@ -216,7 +216,7 @@ func TestChatHandler_ToolResultMessagePassthrough(t *testing.T) {
 		io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"done"},"finish_reason":"stop"}]}`)
 	}, func(h *ChatHandler, gotBody *map[string]interface{}) {
 		rec := postChat(t, h, `{
-		  "model":"Seed-Code",
+		  "model":"seed_m8",
 		  "messages":[
 		    {"role":"user","content":"read a.go"},
 		    {"role":"assistant","content":"","tool_calls":[{"id":"call_1","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"a.go\"}"}}]},
@@ -253,7 +253,7 @@ func TestChatHandler_NonStreamReasoningField(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"<think>hmm</think>42"},"finish_reason":"stop"}]}`)
 	}, func(h *ChatHandler, _ *map[string]interface{}) {
-		rec := postChat(t, h, `{"model":"Seed-Code","messages":[{"role":"user","content":"?"}],"stream":false}`)
+		rec := postChat(t, h, `{"model":"seed_m8","messages":[{"role":"user","content":"?"}],"stream":false}`)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 		}
