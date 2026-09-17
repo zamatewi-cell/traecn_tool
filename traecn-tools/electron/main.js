@@ -50,7 +50,8 @@ function decryptSecret(ciphertext) {
     console.error('安全存储(safeStorage/DPAPI)解密失败:', e.message);
     return { text: '', rawCiphertext: ciphertext, failed: true };
   }
-  return { text: ciphertext, failed: false };
+  // safeStorage 不可用但凭据为 enc: 密文：标记解密失败，严禁把密文当明文返回！
+  return { text: '', rawCiphertext: ciphertext, failed: true };
 }
 
 // ===== Data Store =====
@@ -318,6 +319,33 @@ function getTraeStorageCandidates() {
   return candidates;
 }
 
+const traeKeyA = Buffer.from([82, 9, 106, 213, 48, 54, 165, 56, 191, 64, 163, 158, 129, 243, 215, 251, 124, 227, 57, 130, 155, 47, 255, 135, 52, 142, 67, 68, 196, 222, 233, 203, 84, 123, 148, 50, 166, 194, 35, 61, 238, 76, 149, 11, 66, 250, 195, 78, 8, 46, 161, 102, 40, 217, 36, 178, 118, 91, 162, 73, 109, 139, 209, 37]);
+const traeKeyB = Buffer.from([31, 221, 168, 51, 136, 7, 199, 49, 177, 18, 16, 89, 39, 128, 236, 95, 96, 81, 127, 169, 25, 181, 74, 13, 45, 229, 122, 159, 147, 201, 156, 239, 160, 224, 59, 77, 174, 42, 245, 176, 200, 235, 187, 60, 131, 83, 153, 97, 23, 43, 4, 126, 186, 119, 214, 38, 225, 105, 20, 99, 85, 33, 12, 125]);
+const traePw = Buffer.alloc(64);
+for (let i = 0; i < 64; i++) traePw[i] = traeKeyA[i] ^ traeKeyB[i];
+
+function decryptTraeBlob(enc) {
+  try {
+    const blob = Buffer.from(enc.trim(), 'base64');
+    if (blob.length < 6 + 32 + 16) return null;
+    const salt = blob.slice(6, 38);
+    const ciphertext = blob.slice(38);
+    
+    const hSalt = crypto.createHash('sha512').update(salt).digest();
+    const kdf = crypto.createHash('sha512').update(Buffer.concat([hSalt, traePw])).digest();
+    const key = kdf.slice(0, 16);
+    const iv = kdf.slice(16, 32);
+
+    const decipher = crypto.createDecipheriv('aes-128-cbc', key, iv);
+    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    const jsonBuf = decrypted.slice(64);
+    return JSON.parse(jsonBuf.toString('utf8'));
+  } catch (e) {
+    console.warn('Trae AES-128-CBC blob 解密失败:', e.message);
+    return null;
+  }
+}
+
 // ===== Read Trae CN Storage =====
 function readTraeStorage(storagePath) {
   try {
@@ -339,22 +367,30 @@ function readTraeStorage(storagePath) {
       return null;
     }
 
-    const data = JSON.parse(fs.readFileSync(defaultPath, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(targetPath, 'utf8'));
     const authKey = 'iCubeAuthInfo://icube.cloudide';
     if (data[authKey]) {
-      const authInfo = JSON.parse(data[authKey]);
-      return {
-        token: authInfo.token,
-        refreshToken: authInfo.refreshToken,
-        userId: authInfo.userId,
-        host: authInfo.host,
-        expiredAt: authInfo.expiredAt,
-        refreshExpiredAt: authInfo.refreshExpiredAt,
-        username: authInfo.account?.username,
-        scope: authInfo.account?.scope,
-        region: authInfo.userRegion?.region,
-        aiRegion: authInfo.userRegion?._aiRegion,
-      };
+      let authInfo = null;
+      try {
+        authInfo = JSON.parse(data[authKey]);
+      } catch (e) {
+        authInfo = decryptTraeBlob(data[authKey]);
+      }
+
+      if (authInfo) {
+        return {
+          token: authInfo.token,
+          refreshToken: authInfo.refreshToken,
+          userId: authInfo.userId,
+          host: authInfo.host,
+          expiredAt: authInfo.expiredAt,
+          refreshExpiredAt: authInfo.refreshExpiredAt,
+          username: authInfo.account?.username,
+          scope: authInfo.account?.scope,
+          region: authInfo.userRegion?.region,
+          aiRegion: authInfo.userRegion?._aiRegion,
+        };
+      }
     }
     return null;
   } catch (e) {

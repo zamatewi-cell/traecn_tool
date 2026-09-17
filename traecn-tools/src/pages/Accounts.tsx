@@ -130,14 +130,87 @@ export default function Accounts() {
     refreshToken: acc.refreshToken ? maskSecret(acc.refreshToken) : acc.refreshToken,
   });
 
-  const handleExport = () => {
+  const handleImport = async () => {
+    try {
+      if (window.electronAPI?.importAccounts) {
+        const res = await window.electronAPI.importAccounts();
+        if (res.canceled) return;
+        if (!res.success || !res.data) {
+          alert('导入失败: ' + (res.error || '未能解析账号数据'));
+          return;
+        }
+        const imported = Array.isArray(res.data) ? res.data : [res.data];
+        let addedCount = 0;
+        imported.forEach((acc: any) => {
+          if (acc && (acc.email || acc.userId || acc.token)) {
+            addAccount({
+              email: acc.email || `imported_${Date.now()}`,
+              token: acc.token || '',
+              refreshToken: acc.refreshToken || '',
+              userId: acc.userId || '',
+              username: acc.username || '',
+              region: acc.region || '',
+              aiRegion: acc.aiRegion || '',
+              label: acc.label || 'imported',
+              tags: acc.tags || [],
+              disabled: false,
+            });
+            addedCount++;
+          }
+        });
+        alert(`成功导入 ${addedCount} 个账号配置`);
+      } else {
+        alert('当前环境不支持本地文件导入');
+      }
+    } catch (e: any) {
+      alert('导入失败: ' + e.message);
+    }
+  };
+
+  const handleExport = async () => {
     const sanitized = accounts.map(sanitizeAccountForExport);
+    const defaultFileName = `traecn-accounts-sanitized-${new Date().toISOString().slice(0, 10)}.json`;
+
+    if (window.electronAPI?.exportAccounts) {
+      const res = await window.electronAPI.exportAccounts(sanitized, defaultFileName);
+      if (!res.canceled && res.success) {
+        alert('脱敏信息导出成功');
+      } else if (res.error) {
+        alert('导出失败: ' + res.error);
+      }
+      return;
+    }
+
     const data = JSON.stringify(sanitized, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `traecn-accounts-sanitized-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = defaultFileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportSingle = async (acc: any) => {
+    const sanitized = sanitizeAccountForExport(acc);
+    const defaultFileName = `${acc.email || acc.id}-sanitized.json`;
+
+    if (window.electronAPI?.exportAccounts) {
+      const res = await window.electronAPI.exportAccounts(sanitized, defaultFileName);
+      if (!res.canceled && res.success) {
+        alert(`账号 ${acc.email || acc.id} 脱敏信息导出成功`);
+      } else if (res.error) {
+        alert('导出失败: ' + res.error);
+      }
+      return;
+    }
+
+    const data = JSON.stringify(sanitized, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = defaultFileName;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -195,8 +268,9 @@ export default function Accounts() {
           title="从本地 Trae CN 读取">
           <RefreshCw size={16} />
         </button>
-        <button className="flex items-center gap-1.5 px-3 py-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm transition-colors"
-          title="导入">
+        <button onClick={handleImport}
+          className="flex items-center gap-1.5 px-3 py-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm transition-colors"
+          title="导入账号配置文件">
           <Upload size={16} />
           导入
         </button>
@@ -309,17 +383,7 @@ export default function Accounts() {
                     onClick={() => { setEditingLabel(account.id); setLabelInput(account.label); }} />
                   <ActionButton icon={<ArrowRightLeft size={14} />} title="切换到此账号" onClick={() => switchAccount(account.id)} />
                   <ActionButton icon={<Flame size={14} />} title="预热" onClick={() => {}} />
-                  <ActionButton icon={<Download size={14} />} title="导出" onClick={() => {
-                    const sanitized = sanitizeAccountForExport(account);
-                    const data = JSON.stringify(sanitized, null, 2);
-                    const blob = new Blob([data], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `${account.email || account.id}-sanitized.json`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                  }} />
+                  <ActionButton icon={<Download size={14} />} title="导出脱敏信息" onClick={() => handleExportSingle(account)} />
                   <ActionButton icon={<Eye size={14} />} title="详情" onClick={() => {}} />
                   <ActionButton icon={<Ban size={14} />} title={account.disabled ? '启用反代' : '禁用反代'}
                     onClick={() => setAccountDisabled(account.id, !account.disabled)}
