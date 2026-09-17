@@ -564,72 +564,113 @@ func (c *Client) GetUsageRecords(ctx context.Context, token string, page, pageSi
 		page = 1
 	}
 
-	body := map[string]interface{}{
+	nowSec := time.Now().Unix()
+	startTime := nowSec - 30*24*3600 // 最近 30 天
+	endTime := nowSec
+
+	baseBody := map[string]interface{}{
+		"start_time": startTime,
+		"end_time":   endTime,
 		"page_num":   page,
 		"page_size":  pageSize,
-		"usage_type": []int{1, 2},
+		"Request":    map[string]interface{}{},
 	}
 
-	raw, err := c.doRequest(ctx, http.MethodPost, PathUsageGroupBySession, headers, body)
-	if err != nil {
-		return nil, 0, err
+	// 尝试两种方案：优先 usage_type: [7] (积分计费模式)，若无则尝试不带 usage_type
+	attempts := []map[string]interface{}{
+		{
+			"start_time": startTime,
+			"end_time":   endTime,
+			"page_num":   page,
+			"page_size":  pageSize,
+			"usage_type": []int{7},
+			"Request":    map[string]interface{}{},
+		},
+		baseBody,
 	}
 
-	var parsed struct {
-		Code int `json:"code"`
-		Data struct {
-			Total    int `json:"total"`
-			Sessions []struct {
-				SessionID        string  `json:"session_id"`
-				StartTime        int64   `json:"session_start_time"`
-				EndTime          int64   `json:"session_end_time"`
-				ModelName        string  `json:"model_name"`
-				CreditsConsumed  float64 `json:"credits_float"`
-				PromptTokens     int64   `json:"prompt_tokens"`
-				CompletionTokens int64   `json:"completion_tokens"`
-				UserInputPreview string  `json:"user_input_preview"`
-				ProductTypeList  []int   `json:"product_type_list"`
-			} `json:"user_usage_group_by_sessions"`
-		} `json:"data"`
+	type sessionItem struct {
+		SessionID        string  `json:"session_id"`
+		StartTime        int64   `json:"session_start_time"`
+		EndTime          int64   `json:"session_end_time"`
+		ModelName        string  `json:"model_name"`
+		CreditsConsumed  float64 `json:"credits_float"`
+		PromptTokens     int64   `json:"prompt_tokens"`
+		CompletionTokens int64   `json:"completion_tokens"`
+		UserInputPreview string  `json:"user_input_preview"`
+		ProductTypeList  []int   `json:"product_type_list"`
 	}
 
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return nil, 0, err
-	}
-
-	var records []UsageSessionRecord
-	for _, s := range parsed.Data.Sessions {
-		product := "Free"
-		if len(s.ProductTypeList) > 0 {
-			switch s.ProductTypeList[0] {
-			case 1:
-				product = "Pro"
-			case 2:
-				product = "Package"
-			case 4:
-				product = "ProPlus"
-			case 6:
-				product = "Ultra"
-			case 100:
-				product = "Express"
-			}
+	for _, body := range attempts {
+		raw, err := c.doRequest(ctx, http.MethodPost, PathUsageGroupBySession, headers, body)
+		if err != nil {
+			continue
 		}
 
-		records = append(records, UsageSessionRecord{
-			SessionID:        s.SessionID,
-			StartTime:        s.StartTime,
-			EndTime:          s.EndTime,
-			ModelName:        s.ModelName,
-			ProductName:      product,
-			CreditsConsumed:  s.CreditsConsumed,
-			PromptTokens:     s.PromptTokens,
-			CompletionTokens: s.CompletionTokens,
-			TotalTokens:      s.PromptTokens + s.CompletionTokens,
-			Preview:          s.UserInputPreview,
-		})
+		var parsed struct {
+			Code     int           `json:"code"`
+			Total    int           `json:"total"`
+			Sessions []sessionItem `json:"user_usage_group_by_sessions"`
+			Data     struct {
+				Total    int           `json:"total"`
+				Sessions []sessionItem `json:"user_usage_group_by_sessions"`
+			} `json:"data"`
+			Result struct {
+				Total    int           `json:"total"`
+				Sessions []sessionItem `json:"user_usage_group_by_sessions"`
+			} `json:"result"`
+		}
+
+		if err := json.Unmarshal(raw, &parsed); err == nil {
+			total := parsed.Total
+			sessions := parsed.Sessions
+			if total == 0 && len(sessions) == 0 {
+				total = parsed.Data.Total
+				sessions = parsed.Data.Sessions
+			}
+			if total == 0 && len(sessions) == 0 {
+				total = parsed.Result.Total
+				sessions = parsed.Result.Sessions
+			}
+
+			if len(sessions) > 0 {
+				var records []UsageSessionRecord
+				for _, s := range sessions {
+					product := "Free"
+					if len(s.ProductTypeList) > 0 {
+						switch s.ProductTypeList[0] {
+						case 1:
+							product = "Pro"
+						case 2:
+							product = "Package"
+						case 4:
+							product = "ProPlus"
+						case 6:
+							product = "Ultra"
+						case 100:
+							product = "Express"
+						}
+					}
+
+					records = append(records, UsageSessionRecord{
+						SessionID:        s.SessionID,
+						StartTime:        s.StartTime,
+						EndTime:          s.EndTime,
+						ModelName:        s.ModelName,
+						ProductName:      product,
+						CreditsConsumed:  s.CreditsConsumed,
+						PromptTokens:     s.PromptTokens,
+						CompletionTokens: s.CompletionTokens,
+						TotalTokens:      s.PromptTokens + s.CompletionTokens,
+						Preview:          s.UserInputPreview,
+					})
+				}
+				return records, total, nil
+			}
+		}
 	}
 
-	return records, parsed.Data.Total, nil
+	return []UsageSessionRecord{}, 0, nil
 }
 
 // GetFullProfile queries all profile data in parallel and calculates spendable credits
