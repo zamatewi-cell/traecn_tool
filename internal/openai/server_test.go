@@ -368,3 +368,65 @@ func TestServer_KnownModels(t *testing.T) {
 		}
 	}
 }
+
+func TestServer_CORS_UntrustedOriginBlockedWhenNoAuth(t *testing.T) {
+	tokens := auth.NewTokenProvider()
+	logger := newTestLogger()
+	p := proxy.NewTraeProxy(tokens, logger)
+	// Server running without API keys (open loopback mode)
+	s := NewServer(p, logger, nil)
+
+	// External malicious website trying to access local gateway
+	req := httptest.NewRequest("GET", "/health", nil)
+	req.Header.Set("Origin", "https://evil.attacker.com")
+	w := httptest.NewRecorder()
+
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("ServeHTTP() with external untrusted Origin = %d, want 403 Forbidden", w.Code)
+	}
+
+	// OPTIONS preflight from untrusted origin should also be blocked
+	preflightReq := httptest.NewRequest("OPTIONS", "/v1/chat/completions", nil)
+	preflightReq.Header.Set("Origin", "https://evil.attacker.com")
+	preflightW := httptest.NewRecorder()
+
+	s.ServeHTTP(preflightW, preflightReq)
+
+	if preflightW.Code != http.StatusForbidden {
+		t.Errorf("ServeHTTP() OPTIONS preflight with external untrusted Origin = %d, want 403 Forbidden", preflightW.Code)
+	}
+}
+
+func TestServer_CORS_TrustedOriginsAllowedWhenNoAuth(t *testing.T) {
+	tokens := auth.NewTokenProvider()
+	logger := newTestLogger()
+	p := proxy.NewTraeProxy(tokens, logger)
+	// Server running without API keys
+	s := NewServer(p, logger, nil)
+
+	trustedOrigins := []string{
+		"http://localhost:3000",
+		"http://127.0.0.1:5173",
+		"http://[::1]:8080",
+		"vscode-webview://abc123xyz",
+		"app://obsidian.md",
+	}
+
+	for _, origin := range trustedOrigins {
+		req := httptest.NewRequest("GET", "/health", nil)
+		req.Header.Set("Origin", origin)
+		w := httptest.NewRecorder()
+
+		s.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("ServeHTTP() with trusted Origin %s: status = %d, want 200", origin, w.Code)
+		}
+		if got := w.Header().Get("Access-Control-Allow-Origin"); got != origin {
+			t.Errorf("ServeHTTP() with trusted Origin %s: Access-Control-Allow-Origin = %q, want %q", origin, got, origin)
+		}
+	}
+}
+

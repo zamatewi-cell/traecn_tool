@@ -64,7 +64,7 @@ func (s *Server) registerRoutes() {
 	responsesHandler := protocol.NewResponsesHandler(s.proxy)
 
 	// Create middlewares
-	corsMiddleware := middleware.NewCORSMiddleware()
+	corsMiddleware := middleware.NewCORSMiddleware(len(s.apiKeys) > 0)
 	loggerMiddleware := middleware.NewLoggerMiddleware(s.logger)
 
 	// Create API key auth middleware (optional)

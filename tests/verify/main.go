@@ -53,6 +53,52 @@ func main() {
 		os.Exit(1)
 	}
 
+	// 2.3 验证 standalone 无 Key 模式下，防范来自外部恶意网页的跨源 CSRF/Drive-by 访问 (P1级修复)
+	fmt.Println("-> 校验 standalone 默认无 Key 模式下的跨域 Origin 安全边界...")
+	ctxNoAuth, cancelNoAuth := context.WithCancel(context.Background())
+	defer cancelNoAuth()
+	cmdNoAuth := exec.CommandContext(ctxNoAuth, "./trae-proxy.exe", "-listen", "127.0.0.1:9096")
+	if err := cmdNoAuth.Start(); err != nil {
+		fmt.Printf("❌ 启动无 Key 测试服务失败: %v\n", err)
+		os.Exit(1)
+	}
+	defer func() {
+		cancelNoAuth()
+		_ = cmdNoAuth.Wait()
+	}()
+	time.Sleep(1200 * time.Millisecond)
+
+	// 外部恶意 Origin 尝试请求
+	reqEvil, _ := http.NewRequest("GET", "http://127.0.0.1:9096/health", nil)
+	reqEvil.Header.Set("Origin", "https://evil.attacker.com")
+	respEvil, err := http.DefaultClient.Do(reqEvil)
+	if err != nil {
+		fmt.Printf("❌ 恶意 Origin 请求发送失败: %v\n", err)
+		os.Exit(1)
+	}
+	respEvil.Body.Close()
+	if respEvil.StatusCode != http.StatusForbidden {
+		fmt.Printf("❌ 预期恶意 Origin 被 403 阻断，实际返回: %d\n", respEvil.StatusCode)
+		os.Exit(1)
+	}
+	fmt.Println("✔ [CSRF防护] 无 Key 模式下外部恶意 Web Origin (https://evil.attacker.com) 被严格 403 拦截！")
+
+	// 本地受信任 Origin 访问
+	reqSafe, _ := http.NewRequest("GET", "http://127.0.0.1:9096/health", nil)
+	reqSafe.Header.Set("Origin", "http://localhost:3000")
+	respSafe, err := http.DefaultClient.Do(reqSafe)
+	if err != nil {
+		fmt.Printf("❌ 本地 Origin 请求发送失败: %v\n", err)
+		os.Exit(1)
+	}
+	respSafe.Body.Close()
+	if respSafe.StatusCode != http.StatusOK {
+		fmt.Printf("❌ 本地 Origin 预期返回 200，实际返回: %d\n", respSafe.StatusCode)
+		os.Exit(1)
+	}
+	fmt.Println("✔ [Origin放行] 本地受信任 Origin (http://localhost:3000) 成功放行")
+
+
 	// 3. 验证通过 stdin 管道传递配置（零落盘架构），并校验 API Key、request_timeout 与 log_level
 	fmt.Println("-> 启动 stdin 管道配置测试服务...")
 	testKey := "sk-traecn-pipeline-key-5566"
