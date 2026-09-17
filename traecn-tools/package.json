@@ -34,41 +34,5 @@
     "vite": "^6.0.3",
     "wait-on": "^8.0.1",
     "zustand": "^5.0.1"
-  },
-  "build": {
-    "appId": "com.traecn.tools",
-    "productName": "TraeCN Tools",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*",
-      "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "../trae-proxy.exe",
-        "to": "bin/trae-proxy.exe",
-        "filter": ["**/*"]
-      }
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": ["x64"]
-        }
-      ],
-      "icon": "resources/icon.ico",
-      "artifactName": "TraeCN.Tools_${version}_x64-setup.${ext}"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true,
-      "shortcutName": "TraeCN Tools"
-    }
   }
 }

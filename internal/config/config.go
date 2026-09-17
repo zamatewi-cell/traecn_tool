@@ -13,6 +13,7 @@ import (
 type Config struct {
 	ListenAddr     string          `json:"listen_addr"`
 	AllowLan       bool            `json:"allow_lan,omitempty"`
+	InsecureNoAuth bool            `json:"insecure_no_auth,omitempty"`
 	APIKeys        []string        `json:"api_keys,omitempty"`
 	RequestTimeout int             `json:"request_timeout,omitempty"`
 	Accounts       []AccountConfig `json:"accounts"`
@@ -39,17 +40,22 @@ func DefaultConfig() *Config {
 	}
 }
 
+// ParseConfig parses configuration from JSON bytes with defaults
+func ParseConfig(data []byte) (*Config, error) {
+	cfg := DefaultConfig()
+	if err := json.Unmarshal(data, cfg); err != nil {
+		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+	return cfg, nil
+}
+
 // LoadConfig loads configuration from file
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config: %w", err)
 	}
-	cfg := DefaultConfig()
-	if err := json.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
-	}
-	return cfg, nil
+	return ParseConfig(data)
 }
 
 // SaveConfig saves configuration to file

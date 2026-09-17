@@ -3,49 +3,76 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/zamatewi-cell/traecn_tool/internal/auth"
 	"github.com/zamatewi-cell/traecn_tool/internal/config"
 	"github.com/zamatewi-cell/traecn_tool/internal/db"
 	"github.com/zamatewi-cell/traecn_tool/internal/openai"
 	"github.com/zamatewi-cell/traecn_tool/internal/proxy"
+	"github.com/zamatewi-cell/traecn_tool/internal/version"
 )
 
-var version = "1.0.0"
+func parseLogLevel(levelStr string) slog.Level {
+	switch strings.ToLower(levelStr) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
 
 func main() {
-	configPath := flag.String("config", "config.json", "config file path")
+	configPath := flag.String("config", "config.json", "config file path or 'stdin'/'-' to read from stdin")
 	listen := flag.String("listen", "", "listen address (default: 127.0.0.1:9090, or 0.0.0.0:9090 if allow-lan)")
 	allowLan := flag.Bool("allow-lan", false, "allow access from local area network (bind to 0.0.0.0)")
+	insecureNoAuth := flag.Bool("insecure-no-auth", false, "allow LAN exposure without API Key authentication (INSECURE)")
 	logLevel := flag.String("log-level", "info", "log level (debug/info/warn/error)")
 	showVersion := flag.Bool("version", false, "show version")
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("trae-proxy v%s\n", version)
+		fmt.Printf("trae-proxy v%s\n", version.Version)
 		os.Exit(0)
 	}
 
-	// Setup logger
-	var level slog.Level
-	switch *logLevel {
-	case "debug":
-		level = slog.LevelDebug
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	default:
-		level = slog.LevelInfo
-	}
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
+	cliLogLevelSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "log-level" {
+			cliLogLevelSet = true
+		}
+	})
 
-	// Load config
+	// Setup dynamic logger
+	logLevelVar := &slog.LevelVar{}
+	logLevelVar.Set(parseLogLevel(*logLevel))
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevelVar}))
+
+	// Load config (supports file, stdin, or default fallback)
 	var cfg *config.Config
-	if _, err := os.Stat(*configPath); err == nil {
+	var err error
+	if *configPath == "-" || *configPath == "stdin" {
+		inputBytes, errRead := io.ReadAll(os.Stdin)
+		if errRead != nil {
+			logger.Error("failed to read config from stdin", "error", errRead)
+			os.Exit(1)
+		}
+		cfg, err = config.ParseConfig(inputBytes)
+		if err != nil {
+			logger.Error("failed to parse stdin config", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("loaded config from stdin (pipeline mode, zero disk footprint)")
+	} else if _, errStat := os.Stat(*configPath); errStat == nil {
 		cfg, err = config.LoadConfig(*configPath)
 		if err != nil {
 			logger.Error("failed to load config", "error", err)
@@ -57,9 +84,22 @@ func main() {
 		logger.Info("using default config (auto-detecting Trae CN token)")
 	}
 
+	// Apply configuration log_level if not explicitly overridden by CLI
+	if !cliLogLevelSet && cfg.LogLevel != "" {
+		logLevelVar.Set(parseLogLevel(cfg.LogLevel))
+		logger.Debug("applied log level from configuration", "level", cfg.LogLevel)
+	}
+
 	// Determine allow-lan setting
 	if *allowLan {
 		cfg.AllowLan = true
+	}
+
+	// Safety check: prevent accidental LAN exposure without API Key authentication
+	if cfg.AllowLan && len(cfg.APIKeys) == 0 && !cfg.InsecureNoAuth && !*insecureNoAuth {
+		logger.Error("FATAL: allow_lan is enabled but no api_keys are configured! Binding to 0.0.0.0 without authentication is insecure and rejected.")
+		logger.Error("To fix: configure 'api_keys' in configuration, or explicitly pass -insecure-no-auth if you really want to expose without auth.")
+		os.Exit(1)
 	}
 
 	// Determine listen address with security convergence
@@ -151,6 +191,10 @@ func main() {
 	// Start proxy
 	traeProxy := proxy.NewTraeProxy(tp, logger)
 	traeProxy.SetProtection(cfg.Protect)
+	if cfg.RequestTimeout > 0 {
+		traeProxy.SetRequestTimeout(time.Duration(cfg.RequestTimeout) * time.Second)
+		logger.Info("configured request timeout", "seconds", cfg.RequestTimeout)
+	}
 
 	var srvCfg *openai.ServerConfig
 	if len(cfg.APIKeys) > 0 {
@@ -167,7 +211,7 @@ func main() {
 	go traeProxy.RefreshModelRegistry()
 
 	logger.Info("====================================")
-	logger.Info("  trae-proxy v" + version)
+	logger.Info("  trae-proxy v" + version.Version)
 	logger.Info("  Trae CN -> OpenAI Compatible API")
 	logger.Info("====================================")
 

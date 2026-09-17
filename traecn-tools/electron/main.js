@@ -13,18 +13,23 @@ const DATA_DIR = path.join(app.getPath('userData'));
 const DATA_FILE = path.join(DATA_DIR, 'traecn-data.json');
 const PROXY_CONFIG_FILE = path.join(DATA_DIR, 'proxy-config.json');
 
-// ===== Safe Storage Helpers (DPAPI Encryption) =====
+// ===== Safe Storage Helpers (Windows DPAPI Protection) =====
+// 注意：Windows safeStorage 基于 DPAPI，主要防御跨 Windows 账户与离线数据窃取；
+// 在同一 Windows 用户上下文权限内，运行中的进程不构成严格隔离边界。
 function encryptSecret(plaintext) {
   if (!plaintext || typeof plaintext !== 'string') return plaintext;
   if (plaintext.startsWith('enc:')) return plaintext;
-  try {
-    if (safeStorage && safeStorage.isEncryptionAvailable()) {
+  if (safeStorage && safeStorage.isEncryptionAvailable()) {
+    try {
       const encrypted = safeStorage.encryptString(plaintext);
       return 'enc:' + encrypted.toString('base64');
+    } catch (e) {
+      // 遵循 Fail-Closed 原则：加密失败立即抛出错误，严禁静默写明文
+      throw new Error(`安全存储(safeStorage/DPAPI)加密失败: ${e.message}`);
     }
-  } catch (e) {
-    console.warn('safeStorage encrypt failed, falling back to plaintext:', e.message);
   }
+  // 若环境不支持 safeStorage（如 Linux 无密钥环或自动化纯命令行沙盒）
+  console.warn('当前运行环境未提供 safeStorage 安全存储能力，凭证将以明文保存');
   return plaintext;
 }
 
@@ -38,7 +43,8 @@ function decryptSecret(ciphertext) {
       return safeStorage.decryptString(buffer);
     }
   } catch (e) {
-    console.error('safeStorage decrypt failed:', e.message);
+    console.error('安全存储(safeStorage/DPAPI)解密失败:', e.message);
+    return '';
   }
   return ciphertext;
 }
@@ -53,6 +59,10 @@ function loadData() {
           if (acc.token) acc.token = decryptSecret(acc.token);
           if (acc.refreshToken) acc.refreshToken = decryptSecret(acc.refreshToken);
         });
+      }
+      if (parsed.proxyConfig) {
+        if (parsed.proxyConfig.apiKey) parsed.proxyConfig.apiKey = decryptSecret(parsed.proxyConfig.apiKey);
+        if (parsed.proxyConfig.webUiPassword) parsed.proxyConfig.webUiPassword = decryptSecret(parsed.proxyConfig.webUiPassword);
       }
       return parsed;
     }
@@ -81,22 +91,22 @@ function loadData() {
 }
 
 function saveData(data) {
-  try {
-    if (!fs.existsSync(DATA_DIR)) {
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-    }
-    // Deep clone data to avoid mutating memory state
-    const dataToSave = JSON.parse(JSON.stringify(data));
-    if (dataToSave.accounts && Array.isArray(dataToSave.accounts)) {
-      dataToSave.accounts.forEach(acc => {
-        if (acc.token) acc.token = encryptSecret(acc.token);
-        if (acc.refreshToken) acc.refreshToken = encryptSecret(acc.refreshToken);
-      });
-    }
-    fs.writeFileSync(DATA_FILE, JSON.stringify(dataToSave, null, 2), 'utf8');
-  } catch (e) {
-    console.error('Failed to save data:', e);
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
   }
+  // Deep clone data to avoid mutating memory state
+  const dataToSave = JSON.parse(JSON.stringify(data));
+  if (dataToSave.accounts && Array.isArray(dataToSave.accounts)) {
+    dataToSave.accounts.forEach(acc => {
+      if (acc.token) acc.token = encryptSecret(acc.token);
+      if (acc.refreshToken) acc.refreshToken = encryptSecret(acc.refreshToken);
+    });
+  }
+  if (dataToSave.proxyConfig) {
+    if (dataToSave.proxyConfig.apiKey) dataToSave.proxyConfig.apiKey = encryptSecret(dataToSave.proxyConfig.apiKey);
+    if (dataToSave.proxyConfig.webUiPassword) dataToSave.proxyConfig.webUiPassword = encryptSecret(dataToSave.proxyConfig.webUiPassword);
+  }
+  fs.writeFileSync(DATA_FILE, JSON.stringify(dataToSave, null, 2), 'utf8');
 }
 
 function generateApiKey() {
@@ -297,7 +307,14 @@ function startProxyService(config) {
     });
   });
 
-  fs.writeFileSync(PROXY_CONFIG_FILE, JSON.stringify(proxyConfig, null, 2));
+  // 安全防线：主动清理任何可能存在的历史明文配置文件，杜绝磁盘凭据残留
+  if (fs.existsSync(PROXY_CONFIG_FILE)) {
+    try {
+      fs.unlinkSync(PROXY_CONFIG_FILE);
+    } catch (e) {
+      console.warn('清理旧版 proxy-config.json 异常:', e.message);
+    }
+  }
 
   // Try to find the Go binary
   const binaryName = process.platform === 'win32' ? 'trae-proxy.exe' : 'trae-proxy';
@@ -325,9 +342,14 @@ function startProxyService(config) {
   }
 
   try {
-    proxyProcess = spawn(binaryPath, ['-config', PROXY_CONFIG_FILE], {
+    // 零磁盘落盘架构：通过 stdin 管道向 Go 核心传递运行时配置
+    proxyProcess = spawn(binaryPath, ['-config', 'stdin'], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+
+    // 立即通过内存管道写入配置并关闭输入端
+    proxyProcess.stdin.write(JSON.stringify(proxyConfig));
+    proxyProcess.stdin.end();
 
     proxyProcess.stdout.on('data', (data) => {
       if (mainWindow) {
@@ -358,6 +380,11 @@ function stopProxyService() {
   if (proxyProcess) {
     proxyProcess.kill();
     proxyProcess = null;
+    if (fs.existsSync(PROXY_CONFIG_FILE)) {
+      try {
+        fs.unlinkSync(PROXY_CONFIG_FILE);
+      } catch (e) {}
+    }
     return { success: true };
   }
   return { success: false, error: '服务未运行' };

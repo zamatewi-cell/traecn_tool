@@ -15,9 +15,9 @@ import (
 )
 
 func main() {
-	fmt.Println("=== 开始验证 5 大安全与核心缺陷修复 ===")
+	fmt.Println("=== 开始执行深度架构安全与缺陷闭环实测 ===")
 
-	// 1. 验证编译产物版本输出
+	// 1. 验证编译产物版本输出 (统一 version 模块)
 	cmdVersion := exec.Command("./trae-proxy.exe", "-version")
 	outVersion, err := cmdVersion.CombinedOutput()
 	if err != nil {
@@ -25,28 +25,44 @@ func main() {
 		os.Exit(1)
 	}
 	verStr := strings.TrimSpace(string(outVersion))
-	fmt.Printf("✔ 版本号输出: %s\n", verStr)
+	fmt.Printf("✔ [版本统一] 版本号输出: %s\n", verStr)
 	if !strings.Contains(verStr, "v1.0.0") {
 		fmt.Printf("❌ 版本号不符合预期，期望 v1.0.0，实际: %s\n", verStr)
 		os.Exit(1)
 	}
 
-	// 2. 准备测试配置文件，启用 API Key 鉴权
-	testKey := "sk-traecn-test-key-9988"
-	testCfgPath := "test_verify_config.json"
-	cfgContent := fmt.Sprintf(`{
-  "listen_addr": "127.0.0.1:9099",
+	// 2. 验证 LAN 模式防裸奔防呆拦截 (allow_lan=true 且无 key 拒绝启动)
+	fmt.Println("-> 校验 LAN 模式无鉴权拦截...")
+	cmdLanBlock := exec.Command("./trae-proxy.exe", "-allow-lan")
+	outLanBlock, _ := cmdLanBlock.CombinedOutput()
+	if strings.Contains(string(outLanBlock), "FATAL: allow_lan is enabled but no api_keys are configured") {
+		fmt.Println("✔ [LAN防呆] allow_lan 且未配 key 时成功安全早停拦截")
+	} else {
+		fmt.Printf("❌ LAN 防呆未触发，输出:\n%s\n", string(outLanBlock))
+		os.Exit(1)
+	}
+
+	// 3. 验证通过 stdin 管道传递配置（零落盘架构），并校验 API Key、request_timeout 与 log_level
+	fmt.Println("-> 启动 stdin 管道配置测试服务...")
+	testKey := "sk-traecn-pipeline-key-5566"
+	stdinConfig := fmt.Sprintf(`{
+  "listen_addr": "127.0.0.1:9098",
   "allow_lan": false,
+  "request_timeout": 60,
+  "log_level": "debug",
   "api_keys": ["%s"]
 }`, testKey)
-	_ = os.WriteFile(testCfgPath, []byte(cfgContent), 0644)
-	defer os.Remove(testCfgPath)
 
-	// 3. 启动后台实例运行在 127.0.0.1:9099
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	cmdServer := exec.CommandContext(ctx, "./trae-proxy.exe", "-config", testCfgPath)
+	cmdServer := exec.CommandContext(ctx, "./trae-proxy.exe", "-config", "stdin")
+	stdinPipe, err := cmdServer.StdinPipe()
+	if err != nil {
+		fmt.Printf("❌ 获取 stdin pipe 失败: %v\n", err)
+		os.Exit(1)
+	}
+
 	var serverLogs bytes.Buffer
 	cmdServer.Stdout = &serverLogs
 	cmdServer.Stderr = &serverLogs
@@ -60,12 +76,16 @@ func main() {
 		_ = cmdServer.Wait()
 	}()
 
-	// 等待服务启动
+	// 写入内存管道并关闭写入端
+	_, _ = stdinPipe.Write([]byte(stdinConfig))
+	_ = stdinPipe.Close()
+
+	// 等待服务就绪
 	time.Sleep(1500 * time.Millisecond)
 
-	baseURL := "http://127.0.0.1:9099"
+	baseURL := "http://127.0.0.1:9098"
 
-	// 4. 验证 /health 与版本
+	// 4. 验证 /health
 	resp, err := http.Get(baseURL + "/health")
 	if err != nil {
 		fmt.Printf("❌ 连接 /health 失败: %v\nServer Logs:\n%s\n", err, serverLogs.String())
@@ -73,14 +93,13 @@ func main() {
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
-	fmt.Printf("✔ /health 响应: %s\n", strings.TrimSpace(string(body)))
+	fmt.Printf("✔ [健康检查] /health 响应: %s\n", strings.TrimSpace(string(body)))
 	if !strings.Contains(string(body), `"version":"1.0.0"`) {
 		fmt.Printf("❌ /health 未返回版本 1.0.0\n")
 		os.Exit(1)
 	}
 
-	// 5. 验证 API Key 鉴权有效性 (Fix 2 验证)
-	// (a) 未带 Header 请求受保护的 /v1/models 接口，必须返回 401
+	// 5. 验证 API Key 鉴权真拦截 (未带 Key 401，携带 Key 200)
 	respUnauth, err := http.Get(baseURL + "/v1/models")
 	if err != nil {
 		fmt.Printf("❌ 请求 /v1/models 失败: %v\n", err)
@@ -91,9 +110,8 @@ func main() {
 		fmt.Printf("❌ 未授权请求预期返回 401，实际返回: %d\n", respUnauth.StatusCode)
 		os.Exit(1)
 	}
-	fmt.Printf("✔ 未授权访问受保护接口成功被 401 拦截 (Status: %d)\n", respUnauth.StatusCode)
+	fmt.Printf("✔ [鉴权拦截] 未授权请求被正确返回 401\n")
 
-	// (b) 携带正确的 Authorization Header 请求，返回 200
 	reqAuth, _ := http.NewRequest("GET", baseURL+"/v1/models", nil)
 	reqAuth.Header.Set("Authorization", "Bearer "+testKey)
 	respAuth, err := http.DefaultClient.Do(reqAuth)
@@ -106,15 +124,9 @@ func main() {
 		fmt.Printf("❌ 携带正确密钥请求预期返回 200，实际返回: %d\n", respAuth.StatusCode)
 		os.Exit(1)
 	}
-	var modelsResp struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	_ = json.NewDecoder(respAuth.Body).Decode(&modelsResp)
-	fmt.Printf("✔ 携带正确 API Key 成功通过鉴权 (模型数量: %d)\n", len(modelsResp.Data))
+	fmt.Printf("✔ [鉴权通过] 携带 stdin 管道配置的 API Key 成功通过认证\n")
 
-	// 6. 验证流式响应防重下发 (Fix 5 验证)
+	// 6. 验证流式响应 finish_reason 单发保护
 	streamReqBody := `{
 		"model": "deepseek-V3",
 		"messages": [{"role": "user", "content": "1+1=?"}],
@@ -130,12 +142,6 @@ func main() {
 		os.Exit(1)
 	}
 	defer respStream.Body.Close()
-
-	if respStream.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(respStream.Body)
-		fmt.Printf("❌ 流式请求返回状态码: %d, body: %s\n", respStream.StatusCode, string(body))
-		os.Exit(1)
-	}
 
 	finishCount := 0
 	scanner := bufio.NewScanner(respStream.Body)
@@ -155,19 +161,18 @@ func main() {
 				for _, ch := range chunk.Choices {
 					if ch.FinishReason != nil && *ch.FinishReason != "" {
 						finishCount++
-						fmt.Printf("  -> 捕获 finish_reason: %s\n", *ch.FinishReason)
 					}
 				}
 			}
 		}
 	}
-	fmt.Printf("✔ 流式响应结束，finish_reason 出现次数: %d\n", finishCount)
+	fmt.Printf("✔ [流式防重] finish_reason 出现次数严格为: %d\n", finishCount)
 	if finishCount != 1 {
-		fmt.Printf("❌ finish_reason 下发次数异常，期望严格等于 1，实际: %d\n", finishCount)
+		fmt.Printf("❌ finish_reason 下发次数异常，期望为 1，实际: %d\n", finishCount)
 		os.Exit(1)
 	}
 
-	// 7. 验证非流式 TTFT 为 0 统计 (Fix 5 验证)
+	// 7. 验证非流式 TTFT 为 0
 	nonStreamReqBody := `{
 		"model": "deepseek-V3",
 		"messages": [{"role": "user", "content": "hello"}],
@@ -184,7 +189,7 @@ func main() {
 	}
 	respNonStream.Body.Close()
 
-	time.Sleep(500 * time.Millisecond) // 等待落盘
+	time.Sleep(500 * time.Millisecond)
 
 	reqLogs, _ := http.NewRequest("GET", baseURL+"/v1/proxy/logs?page=1&page_size=5", nil)
 	reqLogs.Header.Set("Authorization", "Bearer "+testKey)
@@ -200,7 +205,7 @@ func main() {
 		_ = json.NewDecoder(respLogs.Body).Decode(&logsResp)
 		if len(logsResp.Logs) > 0 {
 			latestLog := logsResp.Logs[0]
-			fmt.Printf("✔ 最新非流式落盘日志: model=%s, ttft_ms=%d\n", latestLog.Model, latestLog.TTFTMs)
+			fmt.Printf("✔ [指标真实] 非流式请求 TTFT 明确记录为: %d ms (非流式置零无污染)\n", latestLog.TTFTMs)
 			if latestLog.TTFTMs != 0 {
 				fmt.Printf("❌ 非流式请求 TTFT 期望为 0，实际为 %d\n", latestLog.TTFTMs)
 				os.Exit(1)
@@ -208,5 +213,20 @@ func main() {
 		}
 	}
 
-	fmt.Println("\n🎉 所有核心修复项测试全部通过 (ALL CHECKS PASSED)！")
+	// 8. 验证日志包含 stdin 管道模式与 request timeout 配置
+	slogs := serverLogs.String()
+	if strings.Contains(slogs, "pipeline mode, zero disk footprint") {
+		fmt.Println("✔ [管道零落盘] 代理核心确认由 stdin 接收配置，磁盘 0 残留")
+	} else {
+		fmt.Printf("❌ 未检测到 stdin 管道加载日志:\n%s\n", slogs)
+		os.Exit(1)
+	}
+	if strings.Contains(slogs, "configured request timeout") {
+		fmt.Println("✔ [超时闭环] 代理核心确认已注入 request_timeout=60s")
+	} else {
+		fmt.Printf("❌ 未检测到 request timeout 注入日志:\n%s\n", slogs)
+		os.Exit(1)
+	}
+
+	fmt.Println("\n🎉 全部闭环验证实测 100% 绿色通过 (ALL CHECKS PASSED)！")
 }

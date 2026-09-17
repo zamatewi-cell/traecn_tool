@@ -53,6 +53,21 @@ func (p *TraeProxy) SetProtection(cfg protect.Config) {
 	p.limiter = protect.NewLimiter(cfg.MaxConcurrent, time.Duration(cfg.MinIntervalMs)*time.Millisecond)
 }
 
+// SetRequestTimeout configures the upstream HTTP client timeout.
+func (p *TraeProxy) SetRequestTimeout(d time.Duration) {
+	if d > 0 && p.client != nil {
+		p.client.Timeout = d
+	}
+}
+
+// RequestTimeout returns the current HTTP client timeout.
+func (p *TraeProxy) RequestTimeout() time.Duration {
+	if p.client != nil {
+		return p.client.Timeout
+	}
+	return 0
+}
+
 // applyProtection compresses and sanitizes the outbound message list.
 func (p *TraeProxy) applyProtection(req *ChatCompletionRequest) {
 	if p.projector != nil {

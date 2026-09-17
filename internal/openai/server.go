@@ -17,6 +17,7 @@ import (
 	"github.com/zamatewi-cell/traecn_tool/internal/protocol"
 	"github.com/zamatewi-cell/traecn_tool/internal/proxy"
 	"github.com/zamatewi-cell/traecn_tool/internal/traeapi"
+	"github.com/zamatewi-cell/traecn_tool/internal/version"
 )
 
 //go:embed dashboard.html
@@ -200,7 +201,7 @@ func (s *Server) handleTraeBillingHistory(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": "1.0.0"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": version.Version})
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -224,7 +225,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]string{
 		"name":      "trae-proxy",
-		"version":   "1.0.0",
+		"version":   version.Version,
 		"dashboard": "/dashboard",
 		"docs":      "https://github.com/zamatewi-cell/traecn_tool",
 	})
