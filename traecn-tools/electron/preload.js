@@ -8,8 +8,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Accounts
   addAccountOAuth: (deviceInfo) => ipcRenderer.invoke('add-account-oauth', deviceInfo),
   readTraeStorage: (storagePath) => ipcRenderer.invoke('read-trae-storage', storagePath),
-  importAccounts: (filePath) => ipcRenderer.invoke('import-accounts', filePath),
-  exportAccounts: (filePath, data) => ipcRenderer.invoke('export-accounts', { filePath, data }),
+  importAccounts: () => ipcRenderer.invoke('import-accounts'),
+  exportAccounts: (data, defaultFileName) => ipcRenderer.invoke('export-accounts', { data, defaultFileName }),
 
   // Device fingerprint
   generateFingerprint: () => ipcRenderer.invoke('generate-fingerprint'),

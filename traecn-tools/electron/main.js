@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, safeStorage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, safeStorage, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -38,19 +38,19 @@ function encryptSecret(plaintext) {
 }
 
 function decryptSecret(ciphertext) {
-  if (!ciphertext || typeof ciphertext !== 'string') return ciphertext;
-  if (!ciphertext.startsWith('enc:')) return ciphertext;
+  if (!ciphertext || typeof ciphertext !== 'string') return { text: ciphertext, failed: false };
+  if (!ciphertext.startsWith('enc:')) return { text: ciphertext, failed: false };
   try {
     if (safeStorage && safeStorage.isEncryptionAvailable()) {
       const base64Str = ciphertext.slice(4);
       const buffer = Buffer.from(base64Str, 'base64');
-      return safeStorage.decryptString(buffer);
+      return { text: safeStorage.decryptString(buffer), failed: false };
     }
   } catch (e) {
     console.error('安全存储(safeStorage/DPAPI)解密失败:', e.message);
-    return '';
+    return { text: '', rawCiphertext: ciphertext, failed: true };
   }
-  return ciphertext;
+  return { text: ciphertext, failed: false };
 }
 
 // ===== Data Store =====
@@ -60,13 +60,49 @@ function loadData() {
       const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
       if (parsed.accounts && Array.isArray(parsed.accounts)) {
         parsed.accounts.forEach(acc => {
-          if (acc.token) acc.token = decryptSecret(acc.token);
-          if (acc.refreshToken) acc.refreshToken = decryptSecret(acc.refreshToken);
+          if (acc.token) {
+            const dec = decryptSecret(acc.token);
+            if (dec.failed) {
+              acc._rawEncryptedToken = dec.rawCiphertext;
+              acc._tokenDecryptFailed = true;
+              acc.token = '';
+            } else {
+              acc.token = dec.text;
+            }
+          }
+          if (acc.refreshToken) {
+            const dec = decryptSecret(acc.refreshToken);
+            if (dec.failed) {
+              acc._rawEncryptedRefreshToken = dec.rawCiphertext;
+              acc._refreshTokenDecryptFailed = true;
+              acc.refreshToken = '';
+            } else {
+              acc.refreshToken = dec.text;
+            }
+          }
         });
       }
       if (parsed.proxyConfig) {
-        if (parsed.proxyConfig.apiKey) parsed.proxyConfig.apiKey = decryptSecret(parsed.proxyConfig.apiKey);
-        if (parsed.proxyConfig.webUiPassword) parsed.proxyConfig.webUiPassword = decryptSecret(parsed.proxyConfig.webUiPassword);
+        if (parsed.proxyConfig.apiKey) {
+          const dec = decryptSecret(parsed.proxyConfig.apiKey);
+          if (dec.failed) {
+            parsed.proxyConfig._rawEncryptedApiKey = dec.rawCiphertext;
+            parsed.proxyConfig._apiKeyDecryptFailed = true;
+            parsed.proxyConfig.apiKey = '';
+          } else {
+            parsed.proxyConfig.apiKey = dec.text;
+          }
+        }
+        if (parsed.proxyConfig.webUiPassword) {
+          const dec = decryptSecret(parsed.proxyConfig.webUiPassword);
+          if (dec.failed) {
+            parsed.proxyConfig._rawEncryptedPassword = dec.rawCiphertext;
+            parsed.proxyConfig._passwordDecryptFailed = true;
+            parsed.proxyConfig.webUiPassword = '';
+          } else {
+            parsed.proxyConfig.webUiPassword = dec.text;
+          }
+        }
       }
       return parsed;
     }
@@ -102,13 +138,40 @@ function saveData(data) {
   const dataToSave = JSON.parse(JSON.stringify(data));
   if (dataToSave.accounts && Array.isArray(dataToSave.accounts)) {
     dataToSave.accounts.forEach(acc => {
-      if (acc.token) acc.token = encryptSecret(acc.token);
-      if (acc.refreshToken) acc.refreshToken = encryptSecret(acc.refreshToken);
+      if (acc._tokenDecryptFailed && (!acc.token || acc.token === '')) {
+        // 凭据解密失败且用户未录入新 token 时，保留磁盘原密文，严禁空串覆盖！
+        acc.token = acc._rawEncryptedToken;
+      } else if (acc.token) {
+        acc.token = encryptSecret(acc.token);
+      }
+      delete acc._tokenDecryptFailed;
+      delete acc._rawEncryptedToken;
+
+      if (acc._refreshTokenDecryptFailed && (!acc.refreshToken || acc.refreshToken === '')) {
+        acc.refreshToken = acc._rawEncryptedRefreshToken;
+      } else if (acc.refreshToken) {
+        acc.refreshToken = encryptSecret(acc.refreshToken);
+      }
+      delete acc._refreshTokenDecryptFailed;
+      delete acc._rawEncryptedRefreshToken;
     });
   }
   if (dataToSave.proxyConfig) {
-    if (dataToSave.proxyConfig.apiKey) dataToSave.proxyConfig.apiKey = encryptSecret(dataToSave.proxyConfig.apiKey);
-    if (dataToSave.proxyConfig.webUiPassword) dataToSave.proxyConfig.webUiPassword = encryptSecret(dataToSave.proxyConfig.webUiPassword);
+    if (dataToSave.proxyConfig._apiKeyDecryptFailed && (!dataToSave.proxyConfig.apiKey || dataToSave.proxyConfig.apiKey === '')) {
+      dataToSave.proxyConfig.apiKey = dataToSave.proxyConfig._rawEncryptedApiKey;
+    } else if (dataToSave.proxyConfig.apiKey) {
+      dataToSave.proxyConfig.apiKey = encryptSecret(dataToSave.proxyConfig.apiKey);
+    }
+    delete dataToSave.proxyConfig._apiKeyDecryptFailed;
+    delete dataToSave.proxyConfig._rawEncryptedApiKey;
+
+    if (dataToSave.proxyConfig._passwordDecryptFailed && (!dataToSave.proxyConfig.webUiPassword || dataToSave.proxyConfig.webUiPassword === '')) {
+      dataToSave.proxyConfig.webUiPassword = dataToSave.proxyConfig._rawEncryptedPassword;
+    } else if (dataToSave.proxyConfig.webUiPassword) {
+      dataToSave.proxyConfig.webUiPassword = encryptSecret(dataToSave.proxyConfig.webUiPassword);
+    }
+    delete dataToSave.proxyConfig._passwordDecryptFailed;
+    delete dataToSave.proxyConfig._rawEncryptedPassword;
   }
   fs.writeFileSync(DATA_FILE, JSON.stringify(dataToSave, null, 2), 'utf8');
 }
@@ -243,15 +306,36 @@ function startOAuthLogin(deviceInfo) {
   });
 }
 
+function getTraeStorageCandidates() {
+  const candidates = [];
+  if (process.env.APPDATA) {
+    candidates.push(path.join(process.env.APPDATA, 'Trae CN', 'User', 'globalStorage', 'storage.json'));
+    candidates.push(path.join(process.env.APPDATA, 'Trae', 'User', 'globalStorage', 'storage.json'));
+  }
+  if (process.env.USERPROFILE) {
+    candidates.push(path.join(process.env.USERPROFILE, '.config', 'Trae CN', 'User', 'globalStorage', 'storage.json'));
+  }
+  return candidates;
+}
+
 // ===== Read Trae CN Storage =====
 function readTraeStorage(storagePath) {
   try {
-    const defaultPath = storagePath || path.join(
-      process.env.APPDATA || '',
-      'Trae CN', 'User', 'globalStorage', 'storage.json'
-    );
+    const candidates = getTraeStorageCandidates();
+    let targetPath = storagePath;
+    if (!targetPath) {
+      targetPath = candidates.find(p => fs.existsSync(p)) || candidates[0];
+    } else {
+      // 严格白名单：只允许读取预设候选列表中的路径，拒绝任意外部路径遍历
+      const resolved = path.resolve(targetPath);
+      const isAllowed = candidates.some(c => path.resolve(c) === resolved);
+      if (!isAllowed) {
+        console.warn('拒绝读取非白名单 Trae Storage 路径:', targetPath);
+        return null;
+      }
+    }
 
-    if (!fs.existsSync(defaultPath)) {
+    if (!targetPath || !fs.existsSync(targetPath)) {
       return null;
     }
 
@@ -452,19 +536,35 @@ function setupIPC() {
     return result ? { success: true, data: result } : { success: false, error: '未找到 Trae CN 认证信息' };
   });
 
-  ipcMain.handle('import-accounts', (_, filePath) => {
+  ipcMain.handle('import-accounts', async () => {
     try {
-      const content = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-      return { success: true, data: content };
+      const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+        title: '选择导入的账号配置文件',
+        properties: ['openFile'],
+        filters: [{ name: 'JSON Files', extensions: ['json'] }],
+      });
+      if (canceled || filePaths.length === 0) {
+        return { success: false, canceled: true };
+      }
+      const content = JSON.parse(fs.readFileSync(filePaths[0], 'utf8'));
+      return { success: true, data: content, filePath: filePaths[0] };
     } catch (e) {
       return { success: false, error: e.message };
     }
   });
 
-  ipcMain.handle('export-accounts', (_, { filePath, data }) => {
+  ipcMain.handle('export-accounts', async (_, { data, defaultFileName }) => {
     try {
+      const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+        title: '导出脱敏信息',
+        defaultPath: defaultFileName || `traecn-accounts-sanitized-${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: 'JSON Files', extensions: ['json'] }],
+      });
+      if (canceled || !filePath) {
+        return { success: false, canceled: true };
+      }
       fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
-      return { success: true };
+      return { success: true, filePath };
     } catch (e) {
       return { success: false, error: e.message };
     }
@@ -488,19 +588,34 @@ function setupIPC() {
   }));
 
   ipcMain.handle('open-external', (_, url) => {
-    // Only allow specific trusted domains
-    const allowed = ['https://www.trae.cn', 'https://trae.cn'];
     try {
       const parsed = new URL(url);
-      if (allowed.some(a => url.startsWith(a))) {
+      if (parsed.protocol === 'https:' && ['trae.cn', 'www.trae.cn'].includes(parsed.hostname)) {
         shell.openExternal(url);
         return true;
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('拒绝打开非受信任或非法 URL:', url);
+    }
     return false;
   });
 
-  ipcMain.handle('open-path', (_, p) => shell.openPath(p));
+  ipcMain.handle('open-path', (_, p) => {
+    if (!p || typeof p !== 'string') return '';
+    const allowedDirs = [
+      path.resolve(DATA_DIR),
+      path.resolve(app.getPath('userData')),
+      path.resolve(app.getPath('logs')),
+      ...getTraeStorageCandidates().map(c => path.resolve(path.dirname(c))),
+    ];
+    const resolved = path.resolve(p);
+    const isPermitted = allowedDirs.some(dir => resolved === dir || resolved.startsWith(dir + path.sep));
+    if (!isPermitted) {
+      console.warn('安全拒绝: 尝试打开非受信任目录:', p);
+      return '安全拒绝: 路径不在受信任的目录列表中';
+    }
+    return shell.openPath(resolved);
+  });
   ipcMain.handle('get-data-dir', () => DATA_DIR);
 
   // Window controls

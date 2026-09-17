@@ -137,7 +137,7 @@ export default function Accounts() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `traecn-accounts-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `traecn-accounts-sanitized-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -316,7 +316,7 @@ export default function Accounts() {
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `${account.email}.json`;
+                    a.download = `${account.email || account.id}-sanitized.json`;
                     a.click();
                     URL.revokeObjectURL(url);
                   }} />

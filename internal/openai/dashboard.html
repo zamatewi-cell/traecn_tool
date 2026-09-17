@@ -172,18 +172,18 @@
         <div>
           <div class="flex items-center justify-between mb-3">
             <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">API 访问密钥 (API Key)</span>
-            <button onclick="generateNewKey()" class="text-xs text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1">
-              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-              <span>随机生成</span>
+            <button onclick="clearDashboardApiKey()" class="text-xs text-rose-400 hover:text-rose-300 transition-colors flex items-center gap-1" title="清除保存在浏览器中的 Key">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+              <span>清除 Key</span>
             </button>
           </div>
           <div class="bg-zinc-950 border border-zinc-800/80 rounded-xl p-3 font-mono text-sm text-cyan-400 break-all select-all flex items-center justify-between" id="api-key-box">
-            <span id="api-key-text">未设置 (本地无需Key或在顶部填入)</span>
+            <span id="api-key-text">未设置 (本地开发无需Key或在顶部填入)</span>
             <button onclick="copyToClipboard('api-key-text', 'key-copy-badge')" class="p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors ml-2" title="复制密钥">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
             </button>
           </div>
-          <p class="text-xs text-zinc-400 mt-2">若网关未启用严格校验，可填入任意非空字符串。</p>
+          <p class="text-xs text-zinc-400 mt-2">用于本页面请求网关。若服务端配置了 API Key，请在顶部填入相同密钥。</p>
         </div>
         <div class="mt-4 pt-3 border-t border-zinc-800/50 flex items-center justify-between text-xs text-zinc-500">
           <span>鉴权保护: <strong class="text-zinc-300">本地默认开放</strong></span>
@@ -774,13 +774,10 @@
       });
     }
 
-    function generateNewKey() {
-      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-      let key = 'sk-trae-';
-      for (let i = 0; i < 24; i++) {
-        key += chars.charAt(Math.floor(Math.random() * chars.length));
-      }
-      updateDashboardApiKey(key);
+    function clearDashboardApiKey() {
+      updateDashboardApiKey('');
+      const navInput = document.getElementById('nav-api-key');
+      if (navInput) navInput.value = '';
     }
 
     function toggleConnectGuide() {

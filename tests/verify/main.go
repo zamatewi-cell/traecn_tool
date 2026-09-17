@@ -137,11 +137,11 @@ func main() {
 	}
 	fmt.Printf("✔ [鉴权通过] 携带 stdin 管道配置的 API Key 成功通过认证\n")
 
-	// 5.1 验证 CORS OPTIONS 预检请求不携带 API Key 时被正常放行（非 401 拦截）
+	// 5.1 验证 CORS OPTIONS 预检请求不携带 API Key 时被正常放行（非 401 拦截），且支持 X-API-Key 头
 	reqOptions, _ := http.NewRequest(http.MethodOptions, baseURL+"/v1/chat/completions", nil)
 	reqOptions.Header.Set("Origin", "http://localhost:5173")
 	reqOptions.Header.Set("Access-Control-Request-Method", "POST")
-	reqOptions.Header.Set("Access-Control-Request-Headers", "authorization,content-type")
+	reqOptions.Header.Set("Access-Control-Request-Headers", "authorization,content-type,x-api-key")
 	respOptions, err := http.DefaultClient.Do(reqOptions)
 	if err != nil {
 		fmt.Printf("❌ OPTIONS 预检请求失败: %v\n", err)
@@ -157,7 +157,12 @@ func main() {
 		os.Exit(1)
 	}
 	corsHeader := respOptions.Header.Get("Access-Control-Allow-Origin")
-	fmt.Printf("✔ [CORS放行] OPTIONS 预检请求成功放行无 401 (Status: %d, Allow-Origin: %s)\n", respOptions.StatusCode, corsHeader)
+	allowHeaders := strings.ToLower(respOptions.Header.Get("Access-Control-Allow-Headers"))
+	if !strings.Contains(allowHeaders, "x-api-key") {
+		fmt.Printf("❌ CORS Access-Control-Allow-Headers 未包含 x-api-key: %s\n", allowHeaders)
+		os.Exit(1)
+	}
+	fmt.Printf("✔ [CORS放行] OPTIONS 预检请求成功放行 (Status: %d, Allow-Origin: %s, Allow-Headers 确认包含 x-api-key)\n", respOptions.StatusCode, corsHeader)
 
 	// 6. 验证流式响应 finish_reason 单发保护
 	streamReqBody := `{
@@ -246,20 +251,20 @@ func main() {
 		}
 	}
 
-	// 8. 验证日志包含 stdin 管道模式与 request timeout 配置
+	// 8. 校验核心服务日志输出（stdin 管道传参与超时注入标记）
 	slogs := serverLogs.String()
 	if strings.Contains(slogs, "pipeline mode, zero disk footprint") {
-		fmt.Println("✔ [管道零落盘] 代理核心确认由 stdin 接收配置，磁盘 0 残留")
+		fmt.Println("✔ [管道传递日志] 代理核心确认包含 stdin 管道接收配置标记")
 	} else {
 		fmt.Printf("❌ 未检测到 stdin 管道加载日志:\n%s\n", slogs)
 		os.Exit(1)
 	}
 	if strings.Contains(slogs, "configured request timeout") {
-		fmt.Println("✔ [超时闭环] 代理核心确认已注入 request_timeout=60s")
+		fmt.Println("✔ [超时注入日志] 代理核心确认已包含 request_timeout=60s 注入标记")
 	} else {
 		fmt.Printf("❌ 未检测到 request timeout 注入日志:\n%s\n", slogs)
 		os.Exit(1)
 	}
 
-	fmt.Println("\n🎉 全部闭环验证实测 100% 绿色通过 (ALL CHECKS PASSED)！")
+	fmt.Println("\n✔ 自动化安全行为回归测试项执行完毕，全部断言通过。")
 }
