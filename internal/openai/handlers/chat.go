@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/zamatewi-cell/traecn_tool/internal/db"
 	"github.com/zamatewi-cell/traecn_tool/internal/proxy"
 	"github.com/zamatewi-cell/traecn_tool/internal/transformers"
 )
@@ -56,9 +57,9 @@ func (h *ChatHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Reque
 	}
 
 	if openaiReq.Stream {
-		h.handleStreaming(w, upstreamReq, openaiReq.Model)
+		h.handleStreaming(w, r, upstreamReq, openaiReq.Model)
 	} else {
-		h.handleNonStreaming(w, upstreamReq, openaiReq.Model)
+		h.handleNonStreaming(w, r, upstreamReq, openaiReq.Model)
 	}
 }
 
@@ -79,7 +80,8 @@ func newStreamState() *streamState {
 	}
 }
 
-func (h *ChatHandler) handleNonStreaming(w http.ResponseWriter, upstreamReq *proxy.ChatCompletionRequest, model string) {
+func (h *ChatHandler) handleNonStreaming(w http.ResponseWriter, r *http.Request, upstreamReq *proxy.ChatCompletionRequest, model string) {
+	startTime := time.Now()
 	state := newStreamState()
 	var content, reasoning string
 	toolCalls := map[int]*transformers.OpenAIToolCall{}
@@ -118,6 +120,41 @@ func (h *ChatHandler) handleNonStreaming(w http.ResponseWriter, upstreamReq *pro
 			return evt.Err
 		}
 		return nil
+	})
+
+	elapsedSec := time.Since(startTime).Seconds()
+	var tps float64
+	var promptTokens, compTokens, totalTokens, cachedTokens int64
+	if state.usage != nil {
+		promptTokens = int64(state.usage.PromptTokens)
+		compTokens = int64(state.usage.CompletionTokens)
+		totalTokens = int64(state.usage.TotalTokens)
+		cachedTokens = int64(state.usage.CachedTokens)
+		if elapsedSec > 0 && compTokens > 0 {
+			tps = float64(compTokens) / elapsedSec
+		}
+	}
+
+	statusCode := http.StatusOK
+	var errMsg string
+	if err != nil {
+		statusCode = http.StatusBadGateway
+		errMsg = err.Error()
+	}
+
+	db.GetGlobalStore().RecordLog(&db.LogRecord{
+		TraceID:          state.chunkID,
+		Model:            model,
+		ClientIP:         r.RemoteAddr,
+		PromptTokens:     promptTokens,
+		CompletionTokens: compTokens,
+		TotalTokens:      totalTokens,
+		TTFTMs:           time.Since(startTime).Milliseconds(),
+		TokensPerSecond:  tps,
+		CachedTokens:     cachedTokens,
+		StatusCode:       statusCode,
+		ErrorMsg:         errMsg,
+		CreatedAt:        time.Now().Unix(),
 	})
 
 	if err != nil {
@@ -163,7 +200,10 @@ func (h *ChatHandler) handleNonStreaming(w http.ResponseWriter, upstreamReq *pro
 	h.writeJSON(w, http.StatusOK, resp)
 }
 
-func (h *ChatHandler) handleStreaming(w http.ResponseWriter, upstreamReq *proxy.ChatCompletionRequest, model string) {
+func (h *ChatHandler) handleStreaming(w http.ResponseWriter, r *http.Request, upstreamReq *proxy.ChatCompletionRequest, model string) {
+	startTime := time.Now()
+	var ttftMs int64
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -176,6 +216,43 @@ func (h *ChatHandler) handleStreaming(w http.ResponseWriter, upstreamReq *proxy.
 	}
 
 	state := newStreamState()
+
+	recordCompletion := func(err error) {
+		elapsedSec := time.Since(startTime).Seconds()
+		var tps float64
+		var promptTokens, compTokens, totalTokens, cachedTokens int64
+		if state.usage != nil {
+			promptTokens = int64(state.usage.PromptTokens)
+			compTokens = int64(state.usage.CompletionTokens)
+			totalTokens = int64(state.usage.TotalTokens)
+			cachedTokens = int64(state.usage.CachedTokens)
+			if elapsedSec > 0 && compTokens > 0 {
+				tps = float64(compTokens) / elapsedSec
+			}
+		}
+
+		statusCode := http.StatusOK
+		var errMsg string
+		if err != nil {
+			statusCode = http.StatusBadGateway
+			errMsg = err.Error()
+		}
+
+		db.GetGlobalStore().RecordLog(&db.LogRecord{
+			TraceID:          state.chunkID,
+			Model:            model,
+			ClientIP:         r.RemoteAddr,
+			PromptTokens:     promptTokens,
+			CompletionTokens: compTokens,
+			TotalTokens:      totalTokens,
+			TTFTMs:           ttftMs,
+			TokensPerSecond:  tps,
+			CachedTokens:     cachedTokens,
+			StatusCode:       statusCode,
+			ErrorMsg:         errMsg,
+			CreatedAt:        time.Now().Unix(),
+		})
+	}
 
 	sendChunk := func(delta *transformers.Delta, finishReason *string) {
 		resp := transformers.OpenAIResponse{
@@ -207,12 +284,21 @@ func (h *ChatHandler) handleStreaming(w http.ResponseWriter, upstreamReq *proxy.
 	err := h.proxy.ChatCompletion(upstreamReq, func(evt *proxy.StreamEvent) error {
 		switch evt.Type {
 		case proxy.EventText:
+			if ttftMs == 0 {
+				ttftMs = time.Since(startTime).Milliseconds()
+			}
 			text := evt.Text
 			sendChunk(&transformers.Delta{Content: &text}, nil)
 		case proxy.EventReasoning:
+			if ttftMs == 0 {
+				ttftMs = time.Since(startTime).Milliseconds()
+			}
 			reasoning := evt.Reasoning
 			sendChunk(&transformers.Delta{ReasoningContent: &reasoning}, nil)
 		case proxy.EventToolCall:
+			if ttftMs == 0 {
+				ttftMs = time.Since(startTime).Milliseconds()
+			}
 			tc := evt.ToolCall
 			dtc := transformers.DeltaToolCall{Index: tc.Index}
 			if tc.ID != "" {
@@ -241,6 +327,8 @@ func (h *ChatHandler) handleStreaming(w http.ResponseWriter, upstreamReq *proxy.
 		}
 		return nil
 	})
+
+	recordCompletion(err)
 
 	if err != nil {
 		errorResp := transformers.ErrorResponse{

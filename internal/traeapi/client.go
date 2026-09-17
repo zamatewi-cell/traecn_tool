@@ -55,6 +55,7 @@ type EntitlementPack struct {
 	PackID     string  `json:"pack_id"`
 	PackName   string  `json:"pack_name"`
 	PackDesc   string  `json:"pack_desc"`
+	Category   string  `json:"category"` // "general" (通用积分) 或 "work" (Work专属积分)
 	TotalQuota float64 `json:"total_quota"`
 	UsedQuota  float64 `json:"used_quota"`
 	Unit       string  `json:"unit"`
@@ -99,6 +100,9 @@ type ProfileResponse struct {
 	PayStatus        PayStatus         `json:"pay_status"`
 	UsageSummary     UsageSummary      `json:"usage_summary"`
 	SpendableCredits float64           `json:"spendable_credits"`
+	GeneralCredits   float64           `json:"general_credits"`
+	WorkCredits      float64           `json:"work_credits"`
+	TotalCredits     float64           `json:"total_credits"`
 	Entitlements     []EntitlementPack `json:"entitlements"`
 	Checkin          CheckinInfo       `json:"checkin"`
 }
@@ -322,8 +326,10 @@ func (c *Client) GetEntitlements(ctx context.Context, token string) (*GetEntitle
 			Quota               float64 `json:"quota"`
 			CreditsLimit        float64 `json:"credits_limit"`
 			EntitlementBaseInfo struct {
-				ProductType int `json:"product_type"`
-				Quota       struct {
+				ProductType       int `json:"product_type"`
+				ProductID         int `json:"product_id"`
+				AvailableEndpoint int `json:"available_endpoint"`
+				Quota             struct {
 					TotalQuota   float64 `json:"total_quota"`
 					CreditsLimit float64 `json:"credits_limit"`
 					Unit         string  `json:"unit"`
@@ -413,10 +419,21 @@ func (c *Client) GetEntitlements(ctx context.Context, token string) (*GetEntitle
 					unit = "积分"
 				}
 
+				category := "general"
+				if item.EntitlementBaseInfo.AvailableEndpoint == 1 || item.EntitlementBaseInfo.ProductID == 209 {
+					category = "work"
+				} else {
+					descLow := strings.ToLower(name + " " + item.PackDesc + " " + item.GroupName + " " + item.DisplayDesc)
+					if strings.Contains(descLow, "work") {
+						category = "work"
+					}
+				}
+
 				packs = append(packs, EntitlementPack{
 					PackID:     item.PackID,
 					PackName:   name,
 					PackDesc:   item.PackDesc,
+					Category:   category,
 					TotalQuota: total,
 					UsedQuota:  used,
 					Unit:       unit,
@@ -695,19 +712,32 @@ func (c *Client) GetFullProfile(ctx context.Context, token string, deviceID stri
 		resp.Checkin = *ch
 	}
 
-	// Calculate Spendable Credits
+	// Calculate Spendable, General, and Work Credits
+	var workCredits float64
+	for _, pack := range resp.Entitlements {
+		rem := math.Max(0, pack.TotalQuota-pack.UsedQuota)
+		if pack.Category == "work" {
+			workCredits += rem
+		}
+	}
+
 	if resp.UsageSummary.TotalAmount > 0 {
-		resp.SpendableCredits = resp.UsageSummary.RemainingAmount
+		resp.TotalCredits = resp.UsageSummary.RemainingAmount
 	} else if len(resp.Entitlements) > 0 {
 		var sum float64
 		for _, pack := range resp.Entitlements {
-			if pack.TotalQuota > pack.UsedQuota {
-				sum += (pack.TotalQuota - pack.UsedQuota)
-			}
+			sum += math.Max(0, pack.TotalQuota-pack.UsedQuota)
 		}
-		resp.SpendableCredits = sum
+		resp.TotalCredits = sum
 	} else {
-		resp.SpendableCredits = resp.Checkin.Credits + resp.Checkin.ExtraCredits
+		resp.TotalCredits = resp.Checkin.Credits + resp.Checkin.ExtraCredits
+	}
+
+	resp.WorkCredits = workCredits
+	resp.GeneralCredits = math.Max(0, resp.TotalCredits-workCredits)
+	resp.SpendableCredits = resp.GeneralCredits
+	if resp.SpendableCredits == 0 && resp.TotalCredits > 0 {
+		resp.SpendableCredits = resp.TotalCredits
 	}
 
 	return resp, nil

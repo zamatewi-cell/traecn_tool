@@ -53,8 +53,9 @@
           <span id="user-nickname" class="text-zinc-200 font-medium">加载账号中...</span>
           <span class="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[10px]" id="user-plan-tag">Free</span>
           <span class="text-zinc-500">|</span>
-          <span class="text-zinc-300">积分:</span>
-          <strong class="text-emerald-400 font-mono" id="user-credits-val">--</strong>
+          <span class="text-zinc-300">总积分:</span>
+          <strong class="text-cyan-400 font-mono" id="user-credits-val">--</strong>
+          <span class="text-zinc-400 text-[11px]">(通用可用: <strong class="text-emerald-400 font-mono" id="user-general-val">--</strong>)</span>
         </div>
 
         <div class="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-zinc-800/80 border border-zinc-700/50 text-xs">
@@ -76,13 +77,13 @@
     <!-- 第一行：Trae 官方权益/积分看板与连接配置 -->
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
       
-      <!-- Trae 官方权益包与积分卡片 -->
+      <!-- Trae 官方权益包与细分积分卡片 -->
       <div class="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between shadow-sm">
         <div>
           <div class="flex items-center justify-between mb-3">
             <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
               <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
-              <span>Trae 官方权益与用量</span>
+              <span>Trae 官方权益与额度</span>
             </span>
             <button onclick="refreshTraeProfile()" class="text-xs text-zinc-400 hover:text-zinc-200 transition-colors" title="刷新官方数据">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
@@ -91,8 +92,26 @@
           
           <div class="space-y-3">
             <div class="flex items-center justify-between">
-              <span class="text-xs text-zinc-300">当前剩余可用积分</span>
+              <span class="text-xs text-zinc-300">总可用积分</span>
               <strong class="text-base text-cyan-400 font-mono" id="card-credits-val">--</strong>
+            </div>
+
+            <!-- 通用 vs Work 专属细分面板 -->
+            <div class="grid grid-cols-2 gap-2 text-xs bg-zinc-950/70 p-2.5 rounded-xl border border-zinc-800/80">
+              <div>
+                <div class="text-zinc-400 text-[10px] flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  <span>通用积分 (代理可用)</span>
+                </div>
+                <strong class="text-emerald-400 font-mono text-sm mt-0.5 block" id="card-general-val">--</strong>
+              </div>
+              <div>
+                <div class="text-zinc-400 text-[10px] flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                  <span>Work 专属积分</span>
+                </div>
+                <strong class="text-amber-400 font-mono text-sm mt-0.5 block" id="card-work-val">--</strong>
+              </div>
             </div>
 
             <!-- 权益包进度条 -->
@@ -109,7 +128,7 @@
         </div>
 
         <div class="mt-4 pt-3 border-t border-zinc-800/50 flex items-center justify-between text-xs text-zinc-500">
-          <span>账号类型: <strong class="text-zinc-300" id="card-plan-str">--</strong></span>
+          <span>账号身份: <strong class="text-zinc-300" id="card-plan-str">--</strong></span>
           <span class="text-[11px] text-zinc-400">已连接本地 Trae CN</span>
         </div>
       </div>
@@ -151,180 +170,209 @@
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
             </button>
           </div>
-          <p class="text-xs text-zinc-400 mt-2">支持本地放行或配置鉴权列表。</p>
+          <p class="text-xs text-zinc-400 mt-2">若网关未启用严格校验，可填入任意非空字符串。</p>
         </div>
         <div class="mt-4 pt-3 border-t border-zinc-800/50 flex items-center justify-between text-xs text-zinc-500">
-          <span>当前授权: <strong class="text-zinc-300">本地放行 / 自定义 Key</strong></span>
-          <span id="key-copy-badge" class="text-cyan-400 font-medium opacity-0 transition-opacity">已复制!</span>
+          <span>鉴权保护: <strong class="text-zinc-300">本地默认开放</strong></span>
+          <span id="key-copy-badge" class="text-emerald-400 font-medium opacity-0 transition-opacity">已复制!</span>
         </div>
       </div>
 
     </div>
 
-    <!-- 第二行：客户端一键配置卡片 (可折叠) -->
-    <div class="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-4 space-y-3">
-      <div class="flex items-center justify-between cursor-pointer" onclick="toggleConnectGuide()">
-        <div class="flex items-center gap-2">
-          <span class="text-xs font-semibold text-zinc-300">常用客户端一键接入指南</span>
-          <span class="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400">Cherry Studio / Cline / Codex / NextChat</span>
+    <!-- 第二行：客户端一键接入指南卡片 -->
+    <div class="bg-zinc-900/60 border border-zinc-800/80 rounded-2xl p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+          <h3 class="text-sm font-bold text-zinc-100">常用客户端快速接入配置</h3>
+          <span class="text-xs text-zinc-500">支持直接作为标准 OpenAI 接口接入各类 AI 工具</span>
         </div>
-        <span id="guide-toggle-icon" class="text-xs text-zinc-500">展开 ▼</span>
+        <button onclick="toggleConnectGuide()" class="text-xs text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-1">
+          <span id="guide-toggle-icon">展开 ▼</span>
+        </button>
       </div>
-      <div id="connect-guide-panel" class="hidden grid grid-cols-1 md:grid-cols-4 gap-3 pt-2 text-xs">
-        <div class="p-3 bg-zinc-950 rounded-lg border border-zinc-800 space-y-1">
-          <div class="font-bold text-zinc-200">🍒 Cherry Studio</div>
-          <div class="text-zinc-400 text-[11px]">提供商选择 OpenAI 兼容：</div>
-          <code class="block text-[11px] text-emerald-400 bg-zinc-900 p-1 rounded">BaseURL: http://127.0.0.1:9090/v1</code>
-          <div class="text-zinc-500 text-[10px]">模型选择 DeepSeek-V4.1-Flash</div>
+
+      <div id="connect-guide-panel" class="hidden grid grid-cols-1 md:grid-cols-4 gap-4 pt-2">
+        <!-- Cherry Studio -->
+        <div class="bg-zinc-950 p-4 rounded-xl border border-zinc-800/80 space-y-2">
+          <div class="flex items-center justify-between">
+            <strong class="text-zinc-200 text-xs font-semibold">Cherry Studio</strong>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">桌面端</span>
+          </div>
+          <p class="text-[11px] text-zinc-400">设置 &rarr; 模型服务 &rarr; 添加 OpenAI 格式服务商</p>
+          <div class="text-[11px] font-mono text-zinc-300 bg-zinc-900 p-2 rounded border border-zinc-800/60 space-y-1">
+            <div>BaseURL: <span class="text-emerald-400">http://127.0.0.1:9090/v1</span></div>
+            <div>Key: <span class="text-cyan-400">sk-trae-proxy-local-dev</span></div>
+            <div>推荐模型: <span class="text-zinc-100">DeepSeek-V4.1-Flash</span></div>
+          </div>
         </div>
-        <div class="p-3 bg-zinc-950 rounded-lg border border-zinc-800 space-y-1">
-          <div class="font-bold text-zinc-200">🤖 Cline / Roo Code</div>
-          <div class="text-zinc-400 text-[11px]">API Provider: OpenAI Compatible</div>
-          <code class="block text-[11px] text-emerald-400 bg-zinc-900 p-1 rounded">Base URL: http://127.0.0.1:9090/v1</code>
-          <div class="text-zinc-500 text-[10px]">Model ID: Seed-Code</div>
+
+        <!-- Cline / Roo Code -->
+        <div class="bg-zinc-950 p-4 rounded-xl border border-zinc-800/80 space-y-2">
+          <div class="flex items-center justify-between">
+            <strong class="text-zinc-200 text-xs font-semibold">Cline / Roo Code</strong>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">VSCode 插件</span>
+          </div>
+          <p class="text-[11px] text-zinc-400">API Provider 选择 <span class="text-zinc-200 font-semibold">OpenAI Compatible</span></p>
+          <div class="text-[11px] font-mono text-zinc-300 bg-zinc-900 p-2 rounded border border-zinc-800/60 space-y-1">
+            <div>BaseURL: <span class="text-emerald-400">http://127.0.0.1:9090/v1</span></div>
+            <div>Key: <span class="text-cyan-400">任意非空</span></div>
+            <div>Model: <span class="text-zinc-100">deepseek-V3</span></div>
+          </div>
         </div>
-        <div class="p-3 bg-zinc-950 rounded-lg border border-zinc-800 space-y-1">
-          <div class="font-bold text-zinc-200">⚡ Codex / Claude Code</div>
-          <div class="text-zinc-400 text-[11px]">配置环境变量：</div>
-          <code class="block text-[10px] text-cyan-400 bg-zinc-900 p-1 rounded break-all">OPENAI_BASE_URL=http://127.0.0.1:9090/v1</code>
-          <div class="text-zinc-500 text-[10px]">思考强度由客户端自带参数控制</div>
+
+        <!-- Codex / Agent Harness -->
+        <div class="bg-zinc-950 p-4 rounded-xl border border-zinc-800/80 space-y-2">
+          <div class="flex items-center justify-between">
+            <strong class="text-zinc-200 text-xs font-semibold">Codex / Harness</strong>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">CLI 终端</span>
+          </div>
+          <p class="text-[11px] text-zinc-400">导出环境变量直接驱动 Agent 运行</p>
+          <div class="text-[11px] font-mono text-zinc-300 bg-zinc-900 p-2 rounded border border-zinc-800/60 space-y-1">
+            <div>$env:OPENAI_BASE_URL="http://127.0.0.1:9090/v1"</div>
+            <div>$env:OPENAI_API_KEY="sk-trae"</div>
+            <div>$env:MODEL="DeepSeek-V4.1-Flash"</div>
+          </div>
         </div>
-        <div class="p-3 bg-zinc-950 rounded-lg border border-zinc-800 space-y-1">
-          <div class="font-bold text-zinc-200">💬 NextChat / Chatbox</div>
-          <div class="text-zinc-400 text-[11px]">自定义接口地址：</div>
-          <code class="block text-[11px] text-emerald-400 bg-zinc-900 p-1 rounded">http://127.0.0.1:9090</code>
-          <div class="text-zinc-500 text-[10px]">API Key 填入上方随机 Key 即可</div>
+
+        <!-- NextChat / LobeChat -->
+        <div class="bg-zinc-950 p-4 rounded-xl border border-zinc-800/80 space-y-2">
+          <div class="flex items-center justify-between">
+            <strong class="text-zinc-200 text-xs font-semibold">NextChat / LobeChat</strong>
+            <span class="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400">Web 对话端</span>
+          </div>
+          <p class="text-[11px] text-zinc-400">设置 &rarr; 自定义接口地址</p>
+          <div class="text-[11px] font-mono text-zinc-300 bg-zinc-900 p-2 rounded border border-zinc-800/60 space-y-1">
+            <div>接口地址: <span class="text-emerald-400">http://127.0.0.1:9090</span></div>
+            <div>API Key: <span class="text-cyan-400">sk-trae</span></div>
+            <div>模型: <span class="text-zinc-100">Seed-Code / GLM-5.3</span></div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- 第三行：模型全景列表 与 在线测试 Playground -->
+    <!-- 第三行：左侧可用模型库，右侧 Playground 调试器 -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
       
-      <!-- 左侧：模型全景列表 (5列) -->
+      <!-- 左侧：模型列表 -->
       <div class="lg:col-span-5 space-y-4">
         <div class="flex items-center justify-between">
-          <div>
-            <h2 class="text-base font-bold text-zinc-100 flex items-center gap-2">
-              <span>模型列表</span>
-              <span class="text-xs font-normal text-zinc-400" id="model-count-tag">(21 个)</span>
-            </h2>
-            <p class="text-xs text-zinc-400">双通道智能路由派发</p>
+          <div class="flex items-center space-x-2">
+            <h2 class="font-bold text-sm text-zinc-100">可用模型清单</h2>
+            <span class="text-xs text-zinc-400 font-mono" id="model-count-tag">(-- 个)</span>
           </div>
-          <div class="relative">
-            <input type="text" id="model-search" placeholder="搜索模型名称..." class="bg-zinc-900 border border-zinc-800 text-xs px-3 py-1.5 rounded-lg focus:outline-none focus:border-emerald-500 transition-colors w-40">
+          <div class="flex items-center space-x-1 text-xs">
+            <button onclick="filterModels('all')" class="model-filter-btn px-2.5 py-1 rounded-md bg-zinc-800 text-zinc-100 font-medium" data-filter="all">全部</button>
+            <button onclick="filterModels('agent')" class="model-filter-btn px-2.5 py-1 rounded-md bg-zinc-900 text-zinc-400 hover:text-zinc-200" data-filter="agent">新内置模型</button>
+            <button onclick="filterModels('legacy')" class="model-filter-btn px-2.5 py-1 rounded-md bg-zinc-900 text-zinc-400 hover:text-zinc-200" data-filter="legacy">传统预设</button>
           </div>
         </div>
 
-        <!-- 模型分类过滤标签 -->
-        <div class="flex gap-2 text-xs">
-          <button onclick="filterModels('all')" class="model-filter-btn px-2.5 py-1 rounded-md bg-zinc-800 text-zinc-100 font-medium" data-filter="all">全部 (21)</button>
-          <button onclick="filterModels('agent')" class="model-filter-btn px-2.5 py-1 rounded-md bg-zinc-900 text-zinc-400 hover:text-zinc-200" data-filter="agent">新内置模型 (16)</button>
-          <button onclick="filterModels('legacy')" class="model-filter-btn px-2.5 py-1 rounded-md bg-zinc-900 text-zinc-400 hover:text-zinc-200" data-filter="legacy">旧预设 (5)</button>
+        <!-- 搜索框 -->
+        <div class="relative">
+          <input type="text" id="model-search" placeholder="搜索模型名称或厂商 (如 deepseek, seed, glm)..." 
+                 class="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-emerald-500/50 transition-colors">
         </div>
 
-        <!-- 模型列表滚动卡片 -->
-        <div class="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-3 max-h-[560px] overflow-y-auto custom-scrollbar space-y-2" id="models-container">
-          <div class="text-center py-12 text-zinc-500 text-xs">加载模型列表中...</div>
+        <!-- 模型列表卡片流 -->
+        <div id="models-container" class="space-y-2.5 max-h-[560px] overflow-y-auto custom-scrollbar pr-1">
+          <div class="text-center py-12 text-zinc-500 text-xs">正在拉取模型网关元数据...</div>
         </div>
       </div>
 
-      <!-- 右侧：在线即时测试 Playground (7列) -->
-      <div class="lg:col-span-7 bg-zinc-900/80 border border-zinc-800 rounded-2xl p-6 flex flex-col shadow-sm">
-        <div class="flex items-center justify-between mb-4 pb-4 border-b border-zinc-800">
-          <div>
-            <h2 class="text-base font-bold text-zinc-100 flex items-center gap-2">
-              <span>在线对话测试 (Playground)</span>
-              <span class="text-xs font-medium px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">实时验证</span>
-            </h2>
-            <p class="text-xs text-zinc-400">支持流式增量输出与深度思考链 (Reasoning)</p>
-          </div>
-          <div class="flex items-center gap-3">
-            <label class="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer">
-              <input type="checkbox" id="test-stream" checked class="rounded bg-zinc-800 border-zinc-700 text-emerald-500 focus:ring-0">
-              <span>流式传输 (Stream)</span>
-            </label>
-          </div>
+      <!-- 右侧：快捷测试 (Playground) 与性能监控仪表 -->
+      <div class="lg:col-span-7 space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="font-bold text-sm text-zinc-100 flex items-center gap-2">
+            <span>快捷测试 (Playground)</span>
+            <span class="text-xs font-normal text-zinc-400">实时四联监控：首字延迟、吐字速度、缓存命中、上下文容量</span>
+          </h2>
         </div>
 
-        <!-- Playground 表单 -->
-        <div class="space-y-4 flex-1 flex flex-col">
-          <!-- 3列参数行：模型、MaxTokens限制、系统提示词 -->
-          <div class="grid grid-cols-1 sm:grid-cols-12 gap-3">
-            <div class="sm:col-span-5">
-              <label class="block text-xs font-medium text-zinc-400 mb-1">请求模型</label>
-              <select id="test-model" onchange="onModelChange()" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono text-emerald-400 focus:outline-none focus:border-emerald-500">
-                <option value="DeepSeek-V4.1-Flash" selected>DeepSeek-V4.1-Flash [New]</option>
-                <option value="Seed-Code">Seed-Code [New]</option>
-                <option value="GLM-5.3">GLM-5.3 [New]</option>
-                <option value="deepseek-V3">deepseek-V3 [Legacy]</option>
-                <option value="Doubao_1_5_thinking_pro">Doubao_1_5_thinking_pro [Legacy]</option>
+        <div class="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 space-y-4 shadow-sm">
+          
+          <!-- 性能四联监控指标面板 -->
+          <div class="grid grid-cols-4 gap-3">
+            <div class="bg-zinc-950 p-3 rounded-xl border border-zinc-800/80 text-center">
+              <span class="text-[10px] uppercase tracking-wider text-zinc-400 block">首字延迟 (TTFT)</span>
+              <strong class="text-sm font-mono text-emerald-400 mt-1 block" id="metric-ttft">-- ms</strong>
+            </div>
+            <div class="bg-zinc-950 p-3 rounded-xl border border-zinc-800/80 text-center">
+              <span class="text-[10px] uppercase tracking-wider text-zinc-400 block">输出速度</span>
+              <strong class="text-sm font-mono text-cyan-400 mt-1 block" id="metric-tps">-- t/s</strong>
+            </div>
+            <div class="bg-zinc-950 p-3 rounded-xl border border-zinc-800/80 text-center">
+              <span class="text-[10px] uppercase tracking-wider text-zinc-400 block">提示词缓存命中</span>
+              <strong class="text-sm font-mono text-purple-400 mt-1 block" id="metric-cache">0 cached</strong>
+            </div>
+            <div class="bg-zinc-950 p-3 rounded-xl border border-zinc-800/80 text-center">
+              <span class="text-[10px] uppercase tracking-wider text-zinc-400 block">本次用量 / 限制</span>
+              <strong class="text-sm font-mono text-zinc-200 mt-1 block" id="metric-ctx-ratio">0 / 128K</strong>
+            </div>
+          </div>
+
+          <!-- 模型选择与流式开关 -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-zinc-400 mb-1.5">选择测试模型</label>
+              <select id="test-model" onchange="onModelChange()" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500/50">
+                <option value="">加载模型列表中...</option>
               </select>
             </div>
-            
-            <div class="sm:col-span-3">
-              <div class="flex items-center justify-between mb-1">
-                <label class="text-xs font-medium text-zinc-400">Max Tokens</label>
-                <span class="text-[10px] text-zinc-500" id="max-tokens-label">4096</span>
+            <div class="flex items-center justify-between pt-5">
+              <div class="flex items-center space-x-2">
+                <input type="checkbox" id="test-stream" checked class="w-4 h-4 rounded bg-zinc-950 border-zinc-700 text-emerald-500 focus:ring-emerald-500/20">
+                <label for="test-stream" class="text-xs text-zinc-300 select-none cursor-pointer">启用流式传输 (Stream SSE)</label>
               </div>
-              <input type="number" id="test-max-tokens" min="256" max="16384" step="256" value="4096" oninput="document.getElementById('max-tokens-label').textContent=this.value" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs font-mono text-zinc-200 focus:outline-none focus:border-emerald-500">
-            </div>
-
-            <div class="sm:col-span-4">
-              <label class="block text-xs font-medium text-zinc-400 mb-1">系统提示词 (System - 可选)</label>
-              <input type="text" id="test-system" placeholder="设定 AI 角色..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-emerald-500">
+              <button onclick="clearPlayground()" class="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">清空输出</button>
             </div>
           </div>
 
+          <!-- 系统提示词 (可选) -->
           <div>
-            <label class="block text-xs font-medium text-zinc-400 mb-1">用户提问消息 (Prompt)</label>
-            <textarea id="test-prompt" rows="3" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500 custom-scrollbar resize-none" placeholder="输入测试问题，例如：c++中的容器是什么？"></textarea>
+            <label class="block text-xs font-medium text-zinc-400 mb-1.5">System Prompt (可选)</label>
+            <input type="text" id="test-system" placeholder="例如：你是一个极简风格的资深代码专家，回答尽量紧凑。" 
+                   class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-emerald-500/50">
           </div>
 
-          <!-- 高阶四联性能监控面板 -->
-          <div class="grid grid-cols-4 gap-2 py-2 px-3 bg-zinc-950/80 rounded-xl border border-zinc-800/80 text-xs">
-            <div>
-              <div class="text-[10px] text-zinc-500">首字延迟 (TTFT)</div>
-              <div class="font-mono text-emerald-400 font-bold mt-0.5" id="metric-ttft">-- ms</div>
-            </div>
-            <div>
-              <div class="text-[10px] text-zinc-500">生成速率</div>
-              <div class="font-mono text-cyan-400 font-bold mt-0.5" id="metric-tps">-- t/s</div>
-            </div>
-            <div>
-              <div class="text-[10px] text-zinc-500">缓存命中 (Prompt Cache)</div>
-              <div class="font-mono text-purple-400 font-bold mt-0.5" id="metric-cache">0 / 0%</div>
-            </div>
-            <div>
-              <div class="text-[10px] text-zinc-500">上下文占用 (Tokens)</div>
-              <div class="font-mono text-zinc-300 font-bold mt-0.5" id="metric-ctx-ratio">0 / 128K</div>
-            </div>
+          <!-- 用户输入 -->
+          <div>
+            <label class="block text-xs font-medium text-zinc-400 mb-1.5">User Prompt (消息内容)</label>
+            <textarea id="test-prompt" rows="3" placeholder="在此输入你的提问内容 (如：请帮我写一个 Go 语言并发下载器)..." 
+                      class="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-emerald-500/50 resize-none"></textarea>
           </div>
 
-          <div class="flex items-center justify-between">
-            <div class="text-[11px] text-zinc-500 flex items-center gap-3">
-              <span id="test-timing">总耗时: --</span>
-              <span id="test-tokens">Token: --</span>
+          <!-- 发送控制栏 -->
+          <div class="flex items-center justify-between pt-1">
+            <div class="flex items-center gap-4 text-xs text-zinc-400">
+              <div class="flex items-center gap-2">
+                <span>Max Tokens:</span>
+                <input type="number" id="test-max-tokens" min="256" max="16384" step="256" value="4096"
+                       class="w-20 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1 text-xs text-zinc-200 font-mono text-center focus:outline-none focus:border-emerald-500">
+              </div>
+              <span id="test-timing" class="font-mono text-[11px] text-zinc-500">就绪</span>
             </div>
-            <button id="test-send-btn" onclick="sendTestChat()" class="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-zinc-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+            <button id="test-send-btn" onclick="sendTestChat()" 
+                    class="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-zinc-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-1.5">
               <span>发起请求</span>
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
             </button>
           </div>
 
-          <!-- 响应内容输出区域 -->
-          <div class="flex-1 min-h-[220px] bg-zinc-950 border border-zinc-800 rounded-xl p-4 flex flex-col space-y-3 overflow-hidden">
+          <!-- 响应展示区域 -->
+          <div class="bg-zinc-950 border border-zinc-800 rounded-xl p-4 min-h-[220px] max-h-[360px] flex flex-col justify-between font-mono">
             
-            <!-- 思考链展示面板 -->
-            <div id="test-reasoning-panel" class="hidden rounded-lg bg-zinc-900/90 border border-zinc-800 p-3 space-y-1.5 text-xs">
-              <div class="flex items-center justify-between text-[11px] text-cyan-400 font-semibold cursor-pointer select-none" onclick="toggleReasoning()">
-                <span class="flex items-center gap-1.5">
-                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
-                  <span>深度思考过程 (Reasoning Process)</span>
+            <!-- 深度思考链折叠面板 (Reasoning Content) -->
+            <div id="test-reasoning-panel" class="hidden mb-3 pb-3 border-b border-zinc-800/80">
+              <div class="flex items-center justify-between text-[11px] text-cyan-400 mb-1.5 cursor-pointer select-none" onclick="toggleReasoning()">
+                <span class="flex items-center gap-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                  <span>思考链 (Thinking Process)</span>
                 </span>
                 <span id="reasoning-toggle-icon" class="text-zinc-500 text-[10px]">折叠 ▲</span>
               </div>
-              <div id="test-reasoning-content" class="text-zinc-400 font-mono text-[11px] leading-relaxed max-h-40 overflow-y-auto custom-scrollbar whitespace-pre-wrap"></div>
+              <div id="test-reasoning-content" class="text-xs text-zinc-400 leading-relaxed max-h-[140px] overflow-y-auto custom-scrollbar whitespace-pre-wrap pl-2 border-l-2 border-cyan-500/30"></div>
             </div>
 
             <!-- 最终回答正文面板 -->
@@ -342,47 +390,60 @@
 
     </div>
 
-    <!-- 第四行：双重视图流水表格（本地持久化日志 vs 官方云端账单） -->
+    <!-- 第四行：双重视图流水表格（本地 SQLite 持久化日志 vs 官方云端账单） -->
     <div class="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 space-y-4">
       <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
         <div class="flex items-center space-x-6">
           <button id="tab-live-logs" onclick="switchLogTab('live')" class="text-sm pb-2 tab-active transition-colors flex items-center gap-2">
-            <span>本地会话流水 (本地持久化)</span>
+            <span>本地会话流水 (SQLite 驱动持久化)</span>
             <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
           </button>
           <button id="tab-cloud-billing" onclick="switchLogTab('cloud')" class="text-sm pb-2 text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-2">
-            <span>Trae 官方云端账单 (Official Billing)</span>
+            <span>Trae 官方云端账单 (Official Cloud Billing)</span>
             <span class="w-2 h-2 rounded-full bg-cyan-400"></span>
           </button>
         </div>
         <div class="flex items-center gap-3 text-xs">
-          <button id="export-logs-btn" onclick="exportLiveLogsJSON()" class="text-zinc-400 hover:text-zinc-200 transition-colors">导出日志</button>
+          <button id="export-logs-btn" onclick="exportLogsJSON()" class="text-zinc-400 hover:text-zinc-200 transition-colors">导出日志</button>
           <button id="refresh-logs-btn" onclick="refreshActiveTabLogs()" class="text-zinc-400 hover:text-zinc-200 transition-colors">刷新</button>
-          <button onclick="clearLiveLogs()" class="text-rose-400/80 hover:text-rose-300 transition-colors">清空本地流水</button>
+          <button onclick="clearSQLiteLogs()" class="text-rose-400/80 hover:text-rose-300 transition-colors">清空本地流水</button>
         </div>
       </div>
 
-      <!-- 视图 1：本地实时请求流水 -->
+      <!-- 视图 1：本地 SQLite 持久化请求流水 -->
       <div id="view-live-logs" class="bg-zinc-950 border border-zinc-800/80 rounded-xl overflow-hidden">
         <table class="w-full text-left text-xs">
           <thead class="bg-zinc-900/60 text-zinc-400 border-b border-zinc-800 font-medium">
             <tr>
               <th class="py-2.5 px-4">时间</th>
               <th class="py-2.5 px-4">请求模型</th>
-              <th class="py-2.5 px-4">通道类型</th>
-              <th class="py-2.5 px-4">模式</th>
+              <th class="py-2.5 px-4">客户端 IP</th>
+              <th class="py-2.5 px-4">状态</th>
               <th class="py-2.5 px-4">首字延迟 (TTFT)</th>
               <th class="py-2.5 px-4">输出速度</th>
-              <th class="py-2.5 px-4">总耗时</th>
-              <th class="py-2.5 px-4 text-right">Tokens (缓存)</th>
+              <th class="py-2.5 px-4">Prompt / Completion</th>
+              <th class="py-2.5 px-4 text-right">总 Token (缓存命中)</th>
             </tr>
           </thead>
           <tbody id="live-logs-body" class="divide-y divide-zinc-800/40 font-mono text-zinc-300">
             <tr id="empty-live-row">
-              <td colspan="8" class="py-8 text-center text-zinc-600 font-sans">暂无请求记录，请通过上方 Playground 或外部工具发起对话。</td>
+              <td colspan="8" class="py-8 text-center text-zinc-600 font-sans">正在拉取 SQLite 持久化记录...</td>
             </tr>
           </tbody>
         </table>
+
+        <!-- SQLite 分页工具条 -->
+        <div id="live-pagination-bar" class="px-4 py-2.5 bg-zinc-900/40 border-t border-zinc-800 flex items-center justify-between text-xs text-zinc-400">
+          <div class="flex items-center gap-2">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+            <span id="live-page-info">SQLite 持久化：第 1 页 / 共 0 条</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="live-prev-btn" onclick="prevLivePage()" class="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded transition-colors disabled:opacity-30" disabled>上一页</button>
+            <span id="live-page-num" class="font-mono text-zinc-300">1</span>
+            <button id="live-next-btn" onclick="nextLivePage()" class="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded transition-colors disabled:opacity-30" disabled>下一页</button>
+          </div>
+        </div>
       </div>
 
       <!-- 视图 2：Trae 官方云端账单流水 -->
@@ -412,23 +473,35 @@
 
   </main>
 
-  <footer class="border-t border-zinc-900 py-6 text-center text-xs text-zinc-600">
-    Trae Proxy v0.1.0 &middot; 零成本本地 AI 代理网关 &middot; 享受编程的乐趣
+  <!-- 页脚 -->
+  <footer class="border-t border-zinc-900 bg-zinc-950 py-6 text-center text-xs text-zinc-600">
+    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div>Trae Proxy &copy; 2026 - 让 Trae IDE 模型与积分无缝接入标准生态</div>
+      <div class="font-mono text-zinc-500">SQLite + AES-256-GCM + AgentTask Protocol</div>
+    </div>
   </footer>
 
-  <!-- 前端逻辑处理 -->
   <script>
     let allModels = [];
     let currentFilter = 'all';
     let currentLogTab = 'live';
+    let currentLivePage = 1;
+    let totalLiveLogs = 0;
+    const LIVE_PAGE_SIZE = 15;
 
-    const LIVE_LOGS_STORAGE_KEY = 'trae_proxy_live_logs_v1';
-    const legacyModels = ["seed_m8", "Doubao_1_5_thinking_pro", "deepseek-R1", "deepseek-V3", "deepseek-V3-0324"];
+    const legacyModels = [
+      'seed_m8',
+      'Doubao_1_5_thinking_pro',
+      'deepseek-R1',
+      'deepseek-V3',
+      'deepseek-V3-0324'
+    ];
 
-    window.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', () => {
+      checkHealth();
       loadModels();
       refreshTraeProfile();
-      loadLiveLogsFromStorage();
+      loadLiveLogsFromBackend(1);
       setInterval(checkHealth, 10000);
       setInterval(refreshTraeProfile, 30000); // 每 30 秒自动刷新一次积分与额度
     });
@@ -452,7 +525,7 @@
         if (!res.ok) return;
         const profile = await res.json();
 
-        // 账号与真实积分
+        // 账号与用户身份
         const nickname = profile.user_info?.nickname || 'Trae 用户';
         document.getElementById('user-nickname').textContent = nickname;
         document.getElementById('user-avatar-initial').textContent = nickname.charAt(0).toUpperCase();
@@ -461,23 +534,33 @@
         document.getElementById('user-plan-tag').textContent = plan;
         document.getElementById('card-plan-str').textContent = plan;
 
-        // 优先使用真实可用总积分 (SpendableCredits)
-        const spendable = profile.spendable_credits !== undefined && profile.spendable_credits !== null 
-          ? Math.round(profile.spendable_credits) 
-          : (profile.checkin?.credits || 0);
-        document.getElementById('user-credits-val').textContent = spendable.toLocaleString();
-        document.getElementById('card-credits-val').textContent = spendable.toLocaleString() + ' 积分';
+        // 细分积分展示
+        const general = profile.general_credits !== undefined 
+          ? profile.general_credits.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})
+          : '--';
+        const work = profile.work_credits !== undefined 
+          ? profile.work_credits.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})
+          : '--';
+        const total = profile.total_credits !== undefined 
+          ? profile.total_credits.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})
+          : (profile.spendable_credits !== undefined ? profile.spendable_credits.toLocaleString() : '--');
+
+        document.getElementById('user-credits-val').textContent = total;
+        document.getElementById('user-general-val').textContent = general;
+        document.getElementById('card-credits-val').textContent = total;
+        document.getElementById('card-general-val').textContent = general;
+        document.getElementById('card-work-val').textContent = work;
 
         // 权益包与总积分池进度条
         const summary = profile.usage_summary;
         const packs = profile.entitlements || [];
         
         if (summary && summary.total_amount > 0) {
-          const used = Math.round(summary.consumed_amount);
-          const total = Math.round(summary.total_amount);
+          const used = summary.consumed_amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+          const totalQuota = summary.total_amount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
           const pct = Math.min(100, Math.round((summary.consumed_amount / summary.total_amount) * 100));
-          document.getElementById('pack-name-display').textContent = '官方积分池用量';
-          document.getElementById('pack-usage-display').textContent = used.toLocaleString() + ' / ' + total.toLocaleString() + ' (' + pct + '%)';
+          document.getElementById('pack-name-display').textContent = '官方总积分池用量';
+          document.getElementById('pack-usage-display').textContent = used + ' / ' + totalQuota + ' (' + pct + '%)';
           
           const bar = document.getElementById('pack-progress-bar');
           bar.style.width = pct + '%';
@@ -556,7 +639,7 @@
           '    </div>',
           '    <div class="text-[11px] text-zinc-400 flex items-center gap-3">',
           '      <span>厂商: <strong class="text-zinc-300">' + (m.owned_by || 'Trae') + '</strong></span>',
-          '      <span>上下文: <strong class="text-zinc-300">' + (m.context_window ? Math.round(m.context_window/1024) + 'K' : '32K') + '</strong></span>',
+          '      <span>上下文: <strong class="text-zinc-300">' + (m.context_window ? Math.round(m.context_window/1024) + 'K' : '128K') + '</strong></span>',
           '      <span>Max: <strong class="text-zinc-300">' + (m.max_tokens || 8192) + '</strong></span>',
           '    </div>',
           '  </div>',
@@ -588,10 +671,8 @@
       const ctxLimit = model?.context_window ? Math.round(model.context_window / 1024) + 'K' : '128K';
       document.getElementById('metric-ctx-ratio').textContent = '0 / ' + ctxLimit;
 
-      // 同步设置建议的 MaxTokens
       if (model?.max_tokens) {
         document.getElementById('test-max-tokens').value = Math.min(model.max_tokens, 8192);
-        document.getElementById('max-tokens-label').textContent = document.getElementById('test-max-tokens').value;
       }
     }
 
@@ -670,7 +751,6 @@
       const reasoningBox = document.getElementById('test-reasoning-content');
       const streamStatus = document.getElementById('stream-status-badge');
       const timingBox = document.getElementById('test-timing');
-      const tokensBox = document.getElementById('test-tokens');
 
       const ttftEl = document.getElementById('metric-ttft');
       const tpsEl = document.getElementById('metric-tps');
@@ -678,7 +758,7 @@
       const ctxEl = document.getElementById('metric-ctx-ratio');
 
       if (!prompt) {
-        alert('请输入测试问题！');
+        alert('请输入测试消息内容');
         return;
       }
 
@@ -688,30 +768,26 @@
       reasoningBox.textContent = '';
       reasoningPanel.classList.add('hidden');
       streamStatus.classList.remove('hidden');
-      timingBox.textContent = '总耗时: 计算中...';
-      tokensBox.textContent = 'Token: --';
-      ttftEl.textContent = '等待首字...';
-      tpsEl.textContent = '-- t/s';
+      timingBox.textContent = '正在请求...';
+
+      ttftEl.textContent = '等待...';
+      tpsEl.textContent = '计算中...';
+      cacheEl.textContent = '0 cached';
 
       const messages = [];
-      if (system) {
-        messages.push({ role: 'system', content: system });
-      }
+      if (system) messages.push({ role: 'system', content: system });
       messages.push({ role: 'user', content: prompt });
 
       const startTime = performance.now();
-      let ttftMs = 0;
       let firstTokenReceived = false;
-
-      const isLegacy = legacyModels.includes(model);
-      const channelLabel = isLegacy ? 'Legacy' : 'AgentTask';
+      let ttftMs = 0;
 
       try {
         const response = await fetch('/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + document.getElementById('api-key-text').innerText.trim()
+            'Authorization': 'Bearer sk-trae-proxy-local-dev'
           },
           body: JSON.stringify({
             model: model,
@@ -750,7 +826,6 @@
                   const chunk = JSON.parse(trimmed.slice(6));
                   const delta = chunk.choices?.[0]?.delta || {};
 
-                  // 记录首字延迟 (TTFT)
                   if (!firstTokenReceived && (delta.content || delta.reasoning_content)) {
                     firstTokenReceived = true;
                     ttftMs = Math.round(performance.now() - startTime);
@@ -767,7 +842,6 @@
                     respBox.textContent = fullContent;
                   }
 
-                  // 缓存命中字段
                   if (chunk.usage?.prompt_tokens_details?.cached_tokens) {
                     cachedTokens = chunk.usage.prompt_tokens_details.cached_tokens;
                   }
@@ -777,54 +851,46 @@
           }
 
           const totalDuration = Math.round(performance.now() - startTime);
-          if (!firstTokenReceived) ttftMs = totalDuration;
-
-          const estTokens = Math.round((prompt.length + fullContent.length + fullReasoning.length) * 0.75);
-          const compTokens = Math.round((fullContent.length + fullReasoning.length) * 0.75);
-          const genDuration = Math.max(0.1, (totalDuration - ttftMs) / 1000);
-          const tps = Math.round((compTokens / genDuration) * 10) / 10;
-
           streamStatus.classList.add('hidden');
-          timingBox.textContent = '总耗时: ' + totalDuration + ' ms';
-          tokensBox.textContent = 'Token: ~' + estTokens;
+          timingBox.textContent = '总耗时: ' + totalDuration + ' ms (TTFT: ' + (ttftMs || totalDuration) + ' ms)';
+
+          const compTokens = Math.round(fullContent.length * 0.75);
+          const tps = totalDuration > 0 ? (compTokens / (totalDuration / 1000)).toFixed(1) : '0';
           tpsEl.textContent = tps + ' t/s';
           cacheEl.textContent = cachedTokens + ' cached';
 
           const modelObj = allModels.find(m => m.id === model);
           const ctxLimit = modelObj?.context_window ? Math.round(modelObj.context_window / 1024) + 'K' : '128K';
-          ctxEl.textContent = estTokens + ' / ' + ctxLimit;
+          ctxEl.textContent = compTokens + ' / ' + ctxLimit;
 
-          addLiveLog(model, channelLabel, '流式', ttftMs + ' ms', tps + ' t/s', totalDuration + ' ms', estTokens, cachedTokens);
         } else {
-          const data = await response.json();
+          const json = await response.json();
           const totalDuration = Math.round(performance.now() - startTime);
-          ttftMs = totalDuration;
-
-          const message = data.choices?.[0]?.message || {};
-          if (message.reasoning_content) {
-            reasoningBox.textContent = message.reasoning_content;
-            reasoningPanel.classList.remove('hidden');
-          }
-          respBox.textContent = message.content || '（无文本返回）';
-
-          const usage = data.usage || {};
-          const totalTokens = usage.total_tokens || Math.round((prompt.length + (message.content?.length || 0)) * 0.75);
-          const compTokens = usage.completion_tokens || Math.round((message.content?.length || 0) * 0.75);
-          const cachedTokens = usage.prompt_tokens_details?.cached_tokens || 0;
-          const tps = Math.round((compTokens / (totalDuration / 1000)) * 10) / 10;
-
           streamStatus.classList.add('hidden');
           timingBox.textContent = '总耗时: ' + totalDuration + ' ms';
-          tokensBox.textContent = 'Token: ' + totalTokens;
+
+          const choice = json.choices?.[0] || {};
+          respBox.textContent = choice.message?.content || '无返回文本';
+
+          if (choice.message?.reasoning_content) {
+            reasoningBox.textContent = choice.message.reasoning_content;
+            reasoningPanel.classList.remove('hidden');
+          }
+
+          const usage = json.usage || {};
+          const totalTokens = usage.total_tokens || 0;
+          const compTokens = usage.completion_tokens || 0;
+          const cachedTokens = usage.prompt_tokens_details?.cached_tokens || 0;
+
+          ttftMs = totalDuration;
           ttftEl.textContent = ttftMs + ' ms';
+          const tps = totalDuration > 0 ? (compTokens / (totalDuration / 1000)).toFixed(1) : '0';
           tpsEl.textContent = tps + ' t/s';
           cacheEl.textContent = cachedTokens + ' cached';
 
           const modelObj = allModels.find(m => m.id === model);
           const ctxLimit = modelObj?.context_window ? Math.round(modelObj.context_window / 1024) + 'K' : '128K';
           ctxEl.textContent = totalTokens + ' / ' + ctxLimit;
-
-          addLiveLog(model, channelLabel, '非流式', ttftMs + ' ms', tps + ' t/s', totalDuration + ' ms', totalTokens, cachedTokens);
         }
       } catch (err) {
         const totalDuration = Math.round(performance.now() - startTime);
@@ -836,88 +902,115 @@
       } finally {
         sendBtn.disabled = false;
         sendBtn.classList.remove('opacity-50');
-        // 对话完成 1.5 秒后自动刷新一次官方积分与用量
-        setTimeout(refreshTraeProfile, 1500);
+        // 对话完成后延迟 1 秒自动刷新 SQLite 数据库流水与官方积分
+        setTimeout(() => {
+          refreshTraeProfile();
+          loadLiveLogsFromBackend(1);
+        }, 1200);
       }
     }
 
-    function addLiveLog(model, channel, mode, ttft, speed, duration, tokens, cached) {
-      const entry = {
-        time: new Date().toLocaleTimeString(),
-        model,
-        channel,
-        mode,
-        ttft,
-        speed,
-        duration,
-        tokens,
-        cached
-      };
-
-      saveLiveLogToStorage(entry);
-      renderLiveLogRow(entry, true);
+    function clearPlayground() {
+      document.getElementById('test-response-content').textContent = '';
+      document.getElementById('test-reasoning-content').textContent = '';
+      document.getElementById('test-reasoning-panel').classList.add('hidden');
+      document.getElementById('test-timing').textContent = '已清空';
     }
 
-    function renderLiveLogRow(item, prepend) {
+    // ==================== SQLite 流水与账单模块 ====================
+
+    async function loadLiveLogsFromBackend(page) {
+      currentLivePage = page || 1;
       const tbody = document.getElementById('live-logs-body');
-      const emptyRow = document.getElementById('empty-live-row');
-      if (emptyRow) emptyRow.remove();
-
-      const tr = document.createElement('tr');
-      const cachedStr = item.cached > 0 ? ' (' + item.cached + ' 命中)' : '';
-
-      tr.innerHTML = [
-        '<td class="py-2.5 px-4 text-zinc-400">' + item.time + '</td>',
-        '<td class="py-2.5 px-4 text-zinc-100 font-semibold">' + item.model + '</td>',
-        '<td class="py-2.5 px-4"><span class="px-1.5 py-0.5 rounded text-[10px] ' + (item.channel === 'Legacy' ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400') + '">' + item.channel + '</span></td>',
-        '<td class="py-2.5 px-4 text-zinc-400">' + item.mode + '</td>',
-        '<td class="py-2.5 px-4 text-emerald-400 font-bold">' + item.ttft + '</td>',
-        '<td class="py-2.5 px-4 text-cyan-400">' + item.speed + '</td>',
-        '<td class="py-2.5 px-4 text-zinc-300">' + item.duration + '</td>',
-        '<td class="py-2.5 px-4 text-right text-zinc-200">' + item.tokens + '<span class="text-[10px] text-purple-400">' + cachedStr + '</span></td>'
-      ].join('');
-
-      if (prepend && tbody.firstChild) {
-        tbody.insertBefore(tr, tbody.firstChild);
-      } else {
-        tbody.appendChild(tr);
-      }
-    }
-
-    function saveLiveLogToStorage(entry) {
       try {
-        let list = JSON.parse(localStorage.getItem(LIVE_LOGS_STORAGE_KEY) || '[]');
-        list.unshift(entry);
-        if (list.length > 200) list = list.slice(0, 200);
-        localStorage.setItem(LIVE_LOGS_STORAGE_KEY, JSON.stringify(list));
-      } catch (e) {}
-    }
+        const res = await fetch('/v1/proxy/logs?page=' + currentLivePage + '&page_size=' + LIVE_PAGE_SIZE);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const logs = data.logs || [];
+        totalLiveLogs = data.total || 0;
 
-    function loadLiveLogsFromStorage() {
-      try {
-        const list = JSON.parse(localStorage.getItem(LIVE_LOGS_STORAGE_KEY) || '[]');
-        const tbody = document.getElementById('live-logs-body');
-        if (list.length > 0) {
-          tbody.innerHTML = '';
-          list.forEach(item => renderLiveLogRow(item, false));
+        // 更新分页控件
+        document.getElementById('live-page-info').textContent = 'SQLite 持久化：第 ' + currentLivePage + ' 页 / 共 ' + totalLiveLogs + ' 条记录';
+        document.getElementById('live-page-num').textContent = currentLivePage;
+        document.getElementById('live-prev-btn').disabled = currentLivePage <= 1;
+        document.getElementById('live-next-btn').disabled = currentLivePage * LIVE_PAGE_SIZE >= totalLiveLogs;
+
+        if (logs.length === 0) {
+          tbody.innerHTML = '<tr id="empty-live-row"><td colspan="8" class="py-8 text-center text-zinc-600 font-sans">暂无 SQLite 持久化记录，请通过上方 Playground 或外部工具发起对话。</td></tr>';
+          return;
         }
-      } catch (e) {}
+
+        tbody.innerHTML = logs.map(r => {
+          const timeStr = r.created_at ? new Date(r.created_at * 1000).toLocaleTimeString() : '--';
+          const isOK = r.status_code === 200;
+          const statusBadge = isOK
+            ? '<span class="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px]">200 OK</span>'
+            : '<span class="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px]" title="' + (r.error_msg || '') + '">' + r.status_code + ' ERR</span>';
+
+          const ttftStr = r.ttft_ms > 0 ? r.ttft_ms + ' ms' : '--';
+          const speedStr = r.tokens_per_second > 0 ? r.tokens_per_second.toFixed(1) + ' t/s' : '--';
+          const cachedStr = r.cached_tokens > 0 ? ' (' + r.cached_tokens + ' 命中)' : '';
+          const clientIP = r.client_ip || '127.0.0.1';
+
+          return [
+            '<tr>',
+            '  <td class="py-2.5 px-4 text-zinc-400">' + timeStr + '</td>',
+            '  <td class="py-2.5 px-4 text-zinc-100 font-semibold">' + r.model + '</td>',
+            '  <td class="py-2.5 px-4 text-zinc-400 font-mono text-[11px]">' + clientIP + '</td>',
+            '  <td class="py-2.5 px-4">' + statusBadge + '</td>',
+            '  <td class="py-2.5 px-4 text-emerald-400 font-bold">' + ttftStr + '</td>',
+            '  <td class="py-2.5 px-4 text-cyan-400">' + speedStr + '</td>',
+            '  <td class="py-2.5 px-4 text-zinc-300">' + r.prompt_tokens + ' / ' + r.completion_tokens + '</td>',
+            '  <td class="py-2.5 px-4 text-right text-zinc-200">' + r.total_tokens + '<span class="text-[10px] text-purple-400">' + cachedStr + '</span></td>',
+            '</tr>'
+          ].join('\n');
+        }).join('\n');
+
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-rose-500 font-sans">加载 SQLite 本地日志失败: ' + e.message + '</td></tr>';
+      }
     }
 
-    function clearLiveLogs() {
-      localStorage.removeItem(LIVE_LOGS_STORAGE_KEY);
-      const tbody = document.getElementById('live-logs-body');
-      tbody.innerHTML = '<tr id="empty-live-row"><td colspan="8" class="py-8 text-center text-zinc-600 font-sans">暂无请求记录，请通过上方 Playground 或外部工具发起对话。</td></tr>';
+    function prevLivePage() {
+      if (currentLivePage > 1) {
+        loadLiveLogsFromBackend(currentLivePage - 1);
+      }
     }
 
-    function exportLiveLogsJSON() {
-      const data = localStorage.getItem(LIVE_LOGS_STORAGE_KEY) || '[]';
-      const blob = new Blob([data], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'trae_proxy_activity_logs_' + new Date().toISOString().slice(0,10) + '.json';
-      a.click();
+    function nextLivePage() {
+      if (currentLivePage * LIVE_PAGE_SIZE < totalLiveLogs) {
+        loadLiveLogsFromBackend(currentLivePage + 1);
+      }
+    }
+
+    async function clearSQLiteLogs() {
+      if (!confirm('确定要清空本地 SQLite 数据库中的所有会话流水吗？此操作无法撤销。')) return;
+      try {
+        const res = await fetch('/v1/proxy/logs', { method: 'DELETE' });
+        if (res.ok) {
+          loadLiveLogsFromBackend(1);
+        } else {
+          alert('清空失败');
+        }
+      } catch (e) {
+        alert('清空失败: ' + e.message);
+      }
+    }
+
+    async function exportLogsJSON() {
+      try {
+        const res = await fetch('/v1/proxy/logs?page=1&page_size=1000');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const blob = new Blob([JSON.stringify(data.logs || [], null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'trae_proxy_sqlite_logs_' + new Date().toISOString().slice(0,10) + '.json';
+        a.click();
+      } catch (e) {
+        alert('导出失败: ' + e.message);
+      }
     }
 
     function switchLogTab(tab) {
@@ -932,6 +1025,7 @@
         tabCloud.className = 'text-sm pb-2 text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-2';
         viewLive.classList.remove('hidden');
         viewCloud.classList.add('hidden');
+        loadLiveLogsFromBackend(1);
       } else {
         tabCloud.className = 'text-sm pb-2 tab-active transition-colors flex items-center gap-2';
         tabLive.className = 'text-sm pb-2 text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-2';
@@ -951,7 +1045,7 @@
         const records = data.records || [];
 
         if (records.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-zinc-600 font-sans">未查到官方会话消费记录（云端写入通常有 1~5 分钟延迟）。</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-zinc-600 font-sans">未查到官方会话消费记录（官方云端写入通常有 1~5 分钟延迟）。</td></tr>';
           return;
         }
 
@@ -977,7 +1071,9 @@
     }
 
     function refreshActiveTabLogs() {
-      if (currentLogTab === 'cloud') {
+      if (currentLogTab === 'live') {
+        loadLiveLogsFromBackend(currentLivePage);
+      } else {
         loadCloudBilling();
       }
     }

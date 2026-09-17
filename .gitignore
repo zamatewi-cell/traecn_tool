@@ -48,4 +48,6 @@ desktop.ini
 # Temp & Logs
 *.log
 *.tmp
+data/
+*.db
 

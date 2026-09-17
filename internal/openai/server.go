@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/zamatewi-cell/traecn_tool/internal/db"
 	"github.com/zamatewi-cell/traecn_tool/internal/models"
 	"github.com/zamatewi-cell/traecn_tool/internal/openai/handlers"
 	"github.com/zamatewi-cell/traecn_tool/internal/openai/middleware"
@@ -80,6 +82,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /v1/accounts", s.handleAccounts)
 	s.mux.HandleFunc("GET /v1/trae/profile", s.handleTraeProfile)
 	s.mux.HandleFunc("GET /v1/trae/billing_history", s.handleTraeBillingHistory)
+	s.mux.HandleFunc("GET /v1/proxy/logs", s.handleProxyLogs)
+	s.mux.HandleFunc("DELETE /v1/proxy/logs", s.handleClearProxyLogs)
+	s.mux.HandleFunc("GET /v1/proxy/stats", s.handleProxyStats)
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 	s.mux.HandleFunc("GET /dashboard", s.handleDashboard)
 	s.mux.HandleFunc("GET /", s.handleRoot)
@@ -235,6 +240,69 @@ func writeError(w http.ResponseWriter, status int, errType string, message strin
 	writeJSON(w, status, map[string]interface{}{
 		"error": map[string]string{"type": errType, "message": message},
 	})
+}
+
+func (s *Server) handleProxyLogs(w http.ResponseWriter, r *http.Request) {
+	store := db.GetGlobalStore()
+	if store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage_disabled", "SQLite storage not initialized")
+		return
+	}
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	model := r.URL.Query().Get("model")
+
+	logs, total, err := store.QueryLogs(r.Context(), page, pageSize, model)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+
+	if logs == nil {
+		logs = []*db.LogRecord{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"logs":      logs,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
+}
+
+func (s *Server) handleClearProxyLogs(w http.ResponseWriter, r *http.Request) {
+	store := db.GetGlobalStore()
+	if store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage_disabled", "SQLite storage not initialized")
+		return
+	}
+
+	if err := store.ClearLogs(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Activity logs cleared",
+	})
+}
+
+func (s *Server) handleProxyStats(w http.ResponseWriter, r *http.Request) {
+	store := db.GetGlobalStore()
+	if store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage_disabled", "SQLite storage not initialized")
+		return
+	}
+
+	stats, err := store.GetStats(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, stats)
 }
 
 // ListenAndServe starts the HTTP server

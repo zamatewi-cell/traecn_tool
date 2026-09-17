@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/zamatewi-cell/traecn_tool/internal/auth"
 	"github.com/zamatewi-cell/traecn_tool/internal/config"
+	"github.com/zamatewi-cell/traecn_tool/internal/db"
 	"github.com/zamatewi-cell/traecn_tool/internal/openai"
 	"github.com/zamatewi-cell/traecn_tool/internal/proxy"
 )
@@ -104,6 +106,15 @@ func main() {
 			logger.Info("create config.json to configure tokens manually (token / env_var / storage_path)")
 			os.Exit(1)
 		}
+	}
+
+	// Initialize SQLite persistence store
+	sqliteStore, err := db.InitGlobalStore(filepath.Join("data", "trae_proxy.db"))
+	if err != nil {
+		logger.Warn("failed to initialize sqlite store, activity logging disabled", "error", err)
+	} else {
+		defer sqliteStore.Close()
+		logger.Info("initialized SQLite persistence store", "path", "data/trae_proxy.db")
 	}
 
 	// Start proxy
