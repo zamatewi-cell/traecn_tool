@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/zamatewi-cell/traecn_tool/internal/auth"
@@ -429,4 +430,80 @@ func TestServer_CORS_TrustedOriginsAllowedWhenNoAuth(t *testing.T) {
 		}
 	}
 }
+
+func TestDashboard_HTML_StaticIntegrityAndXSSProtection(t *testing.T) {
+	// 1. 验证 dashboardHTML 变量正确嵌入
+	if len(dashboardHTML) == 0 {
+		t.Fatal("dashboardHTML is empty or not embedded")
+	}
+
+	content := string(dashboardHTML)
+
+	// 2. 验证文件的第一个非 BOM/空白内容必须严格是 <!DOCTYPE html>
+	trimmed := strings.TrimLeft(content, "\xef\xbb\xbf \t\r\n")
+	if !strings.HasPrefix(strings.ToLower(trimmed), "<!doctype html>") {
+		firstLine := trimmed
+		if idx := strings.IndexAny(firstLine, "\r\n"); idx != -1 {
+			firstLine = firstLine[:idx]
+		}
+		t.Fatalf("dashboard.html must strictly start with <!DOCTYPE html>, but got: %q", firstLine)
+	}
+
+	// 3. 验证无外部 CDN 运行时脚本依赖
+	if strings.Contains(content, "cdn.tailwindcss.com") {
+		t.Error("dashboard.html must not import external cdn.tailwindcss.com runtime script")
+	}
+
+	// 4. 验证关键函数定义的唯一性，杜绝重复定义或插入文件头
+	checkSingleDefinition := func(funcPattern string, expectedCount int) {
+		count := strings.Count(content, funcPattern)
+		if count != expectedCount {
+			t.Errorf("expected function %q to be defined %d times, but found %d times", funcPattern, expectedCount, count)
+		}
+	}
+
+	checkSingleDefinition("async function loadLiveLogsFromBackend", 1)
+	checkSingleDefinition("async function loadCloudBilling", 1)
+	checkSingleDefinition("function renderModels()", 1)
+	checkSingleDefinition("function populateSelect()", 1)
+	checkSingleDefinition("function escapeHtml(", 1)
+
+	// 5. 验证不再有动态拼接的 onclick 注入点
+	if strings.Contains(content, "onclick=\"selectForTest(") {
+		t.Error("dashboard.html still contains inline dynamic onclick='selectForTest(...)', should use data-model-id and event delegation")
+	}
+
+	// 6. 验证日志表格和账单表格中的关键动态字段均被 escapeHtml 保护
+	if !strings.Contains(content, "escapeHtml(r.model") {
+		t.Error("loadLiveLogsFromBackend missing escapeHtml for r.model")
+	}
+	if !strings.Contains(content, "escapeHtml(r.error_msg") {
+		t.Error("loadLiveLogsFromBackend missing escapeHtml for r.error_msg")
+	}
+	if !strings.Contains(content, "escapeHtml(r.client_ip") {
+		t.Error("loadLiveLogsFromBackend missing escapeHtml for r.client_ip")
+	}
+	if !strings.Contains(content, "escapeHtml(e.message)") {
+		t.Error("loadLiveLogsFromBackend missing escapeHtml for e.message")
+	}
+
+	// 7. 验证转义规则对于典型 XSS payload 的过滤能力
+	maliciousPayload := `<img src=x onerror=alert(1)>`
+	escapeTest := func(s string) string {
+		s = strings.ReplaceAll(s, "&", "&amp;")
+		s = strings.ReplaceAll(s, "<", "&lt;")
+		s = strings.ReplaceAll(s, ">", "&gt;")
+		s = strings.ReplaceAll(s, "\"", "&quot;")
+		s = strings.ReplaceAll(s, "'", "&#39;")
+		return s
+	}
+	escaped := escapeTest(maliciousPayload)
+	if strings.Contains(escaped, "<") || strings.Contains(escaped, ">") {
+		t.Errorf("escapeHtml should eliminate < and >, got: %s", escaped)
+	}
+	if escaped != "&lt;img src=x onerror=alert(1)&gt;" {
+		t.Errorf("unexpected escaped payload result: %s", escaped)
+	}
+}
+
 

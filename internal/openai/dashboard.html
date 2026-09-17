@@ -1,61 +1,4 @@
-async function loadLiveLogsFromBackend(page = 1) {
-      currentLivePage = page;
-      const tbody = document.getElementById('live-logs-body');
-      
-      try {
-        const res = await apiFetch('/v1/proxy/logs?page=' + page + '&page_size=' + LIVE_PAGE_SIZE);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const data = await res.json();
-        const logs = data.logs || [];
-        totalLiveLogs = data.total || 0;
-
-        // 更新分页控件
-        document.getElementById('live-page-info').textContent = 'SQLite 持久化：第 ' + currentLivePage + ' 页 / 共 ' + totalLiveLogs + ' 条记录';
-        document.getElementById('live-page-num').textContent = currentLivePage;
-        document.getElementById('live-prev-btn').disabled = currentLivePage <= 1;
-        document.getElementById('live-next-btn').disabled = currentLivePage * LIVE_PAGE_SIZE >= totalLiveLogs;
-
-        if (logs.length === 0) {
-          tbody.innerHTML = '<tr id="empty-live-row"><td colspan="8" class="py-8 text-center text-zinc-600 font-sans">暂无 SQLite 持久化记录，请通过上方 Playground 或外部工具发起对话。</td></tr>';
-          return;
-        }
-
-        tbody.innerHTML = logs.map(r => {
-          const timeStr = r.created_at ? escapeHtml(new Date(r.created_at * 1000).toLocaleTimeString()) : '--';
-          const isOK = r.status_code === 200;
-          const statusBadge = isOK
-            ? '<span class="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px]">200 OK</span>'
-            : '<span class="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px]" title="' + escapeHtml(r.error_msg || '') + '">' + escapeHtml(r.status_code) + ' ERR</span>';
-
-          const ttftStr = r.ttft_ms > 0 ? escapeHtml(r.ttft_ms) + ' ms' : '--';
-          const speedStr = r.tokens_per_second > 0 ? escapeHtml(r.tokens_per_second.toFixed(1)) + ' t/s' : '--';
-          const cachedStr = r.cached_tokens > 0 ? ' (' + escapeHtml(r.cached_tokens) + ' 命中)' : '';
-          const clientIP = escapeHtml(r.client_ip || '127.0.0.1');
-          const modelStr = escapeHtml(r.model || '--');
-          const promptTokens = escapeHtml(r.prompt_tokens ?? 0);
-          const completionTokens = escapeHtml(r.completion_tokens ?? 0);
-          const totalTokens = escapeHtml(r.total_tokens ?? 0);
-
-          return [
-            '<tr>',
-            '  <td class="py-2.5 px-4 text-zinc-400">' + timeStr + '</td>',
-            '  <td class="py-2.5 px-4 text-zinc-100 font-semibold">' + modelStr + '</td>',
-            '  <td class="py-2.5 px-4 text-zinc-400 font-mono text-[11px]">' + clientIP + '</td>',
-            '  <td class="py-2.5 px-4">' + statusBadge + '</td>',
-            '  <td class="py-2.5 px-4 text-emerald-400 font-bold">' + ttftStr + '</td>',
-            '  <td class="py-2.5 px-4 text-cyan-400">' + speedStr + '</td>',
-            '  <td class="py-2.5 px-4 text-zinc-300">' + promptTokens + ' / ' + completionTokens + '</td>',
-            '  <td class="py-2.5 px-4 text-right text-zinc-200">' + totalTokens + '<span class="text-[10px] text-purple-400">' + cachedStr + '</span></td>',
-            '</tr>'
-          ].join('\n');
-        }).join('\n');
-
-      } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-rose-500 font-sans">加载 SQLite 本地日志失败: ' + escapeHtml(e.message) + '</td></tr>';
-      }
-    }
-
-    <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN" class="dark">
 <head>
   <meta charset="UTF-8">
@@ -1073,33 +1016,37 @@ async function loadLiveLogsFromBackend(page = 1) {
         }
 
         tbody.innerHTML = logs.map(r => {
-          const timeStr = r.created_at ? new Date(r.created_at * 1000).toLocaleTimeString() : '--';
+          const timeStr = r.created_at ? escapeHtml(new Date(r.created_at * 1000).toLocaleTimeString()) : '--';
           const isOK = r.status_code === 200;
           const statusBadge = isOK
             ? '<span class="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px]">200 OK</span>'
-            : '<span class="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px]" title="' + (r.error_msg || '') + '">' + r.status_code + ' ERR</span>';
+            : '<span class="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px]" title="' + escapeHtml(r.error_msg || '') + '">' + escapeHtml(r.status_code) + ' ERR</span>';
 
-          const ttftStr = r.ttft_ms > 0 ? r.ttft_ms + ' ms' : '--';
-          const speedStr = r.tokens_per_second > 0 ? r.tokens_per_second.toFixed(1) + ' t/s' : '--';
-          const cachedStr = r.cached_tokens > 0 ? ' (' + r.cached_tokens + ' 命中)' : '';
-          const clientIP = r.client_ip || '127.0.0.1';
+          const ttftStr = r.ttft_ms > 0 ? escapeHtml(r.ttft_ms) + ' ms' : '--';
+          const speedStr = r.tokens_per_second > 0 ? escapeHtml(r.tokens_per_second.toFixed(1)) + ' t/s' : '--';
+          const cachedStr = r.cached_tokens > 0 ? ' (' + escapeHtml(r.cached_tokens) + ' 命中)' : '';
+          const clientIP = escapeHtml(r.client_ip || '127.0.0.1');
+          const modelStr = escapeHtml(r.model || '--');
+          const promptTokens = escapeHtml(r.prompt_tokens ?? 0);
+          const completionTokens = escapeHtml(r.completion_tokens ?? 0);
+          const totalTokens = escapeHtml(r.total_tokens ?? 0);
 
           return [
             '<tr>',
             '  <td class="py-2.5 px-4 text-zinc-400">' + timeStr + '</td>',
-            '  <td class="py-2.5 px-4 text-zinc-100 font-semibold">' + r.model + '</td>',
+            '  <td class="py-2.5 px-4 text-zinc-100 font-semibold">' + modelStr + '</td>',
             '  <td class="py-2.5 px-4 text-zinc-400 font-mono text-[11px]">' + clientIP + '</td>',
             '  <td class="py-2.5 px-4">' + statusBadge + '</td>',
             '  <td class="py-2.5 px-4 text-emerald-400 font-bold">' + ttftStr + '</td>',
             '  <td class="py-2.5 px-4 text-cyan-400">' + speedStr + '</td>',
-            '  <td class="py-2.5 px-4 text-zinc-300">' + r.prompt_tokens + ' / ' + r.completion_tokens + '</td>',
-            '  <td class="py-2.5 px-4 text-right text-zinc-200">' + r.total_tokens + '<span class="text-[10px] text-purple-400">' + cachedStr + '</span></td>',
+            '  <td class="py-2.5 px-4 text-zinc-300">' + promptTokens + ' / ' + completionTokens + '</td>',
+            '  <td class="py-2.5 px-4 text-right text-zinc-200">' + totalTokens + '<span class="text-[10px] text-purple-400">' + cachedStr + '</span></td>',
             '</tr>'
           ].join('\n');
         }).join('\n');
 
       } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-rose-500 font-sans">加载 SQLite 本地日志失败: ' + e.message + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="py-8 text-center text-rose-500 font-sans">加载 SQLite 本地日志失败: ' + escapeHtml(e.message) + '</td></tr>';
       }
     }
 
