@@ -14,6 +14,7 @@ import (
 	"github.com/zamatewi-cell/traecn_tool/internal/openai/middleware"
 	"github.com/zamatewi-cell/traecn_tool/internal/protocol"
 	"github.com/zamatewi-cell/traecn_tool/internal/proxy"
+	"github.com/zamatewi-cell/traecn_tool/internal/traeapi"
 )
 
 //go:embed dashboard.html
@@ -21,11 +22,12 @@ var dashboardHTML []byte
 
 // Server is the OpenAI-compatible API server
 type Server struct {
-	proxy   *proxy.TraeProxy
-	logger  *slog.Logger
-	mux     *http.ServeMux
-	apiKeys []string
-	handler http.Handler
+	proxy      *proxy.TraeProxy
+	traeClient *traeapi.Client
+	logger     *slog.Logger
+	mux        *http.ServeMux
+	apiKeys    []string
+	handler    http.Handler
 }
 
 // ServerConfig holds server configuration
@@ -36,10 +38,11 @@ type ServerConfig struct {
 // NewServer creates an OpenAI API server
 func NewServer(p *proxy.TraeProxy, logger *slog.Logger, config *ServerConfig) *Server {
 	s := &Server{
-		proxy:   p,
-		logger:  logger,
-		mux:     http.NewServeMux(),
-		apiKeys: []string{},
+		proxy:      p,
+		traeClient: traeapi.NewClient(""),
+		logger:     logger,
+		mux:        http.NewServeMux(),
+		apiKeys:    []string{},
 	}
 
 	if config != nil && len(config.APIKeys) > 0 {
@@ -75,6 +78,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /v1/responses", responsesHandler.HandleResponses)
 	s.mux.HandleFunc("GET /v1/queue/status", s.handleQueueStatus)
 	s.mux.HandleFunc("GET /v1/accounts", s.handleAccounts)
+	s.mux.HandleFunc("GET /v1/trae/profile", s.handleTraeProfile)
+	s.mux.HandleFunc("GET /v1/trae/billing_history", s.handleTraeBillingHistory)
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 	s.mux.HandleFunc("GET /dashboard", s.handleDashboard)
 	s.mux.HandleFunc("GET /", s.handleRoot)
@@ -141,6 +146,51 @@ func (s *Server) handleQueueStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"accounts": s.proxy.TokenPool().GetAccounts(),
+	})
+}
+
+func (s *Server) handleTraeProfile(w http.ResponseWriter, r *http.Request) {
+	token, _, err := s.proxy.TokenPool().GetToken()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "no_token", "未找到可用的 Trae 账号凭据: "+err.Error())
+		return
+	}
+
+	profile, err := s.traeClient.GetFullProfile(r.Context(), token, "")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "trae_api_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, profile)
+}
+
+func (s *Server) handleTraeBillingHistory(w http.ResponseWriter, r *http.Request) {
+	token, _, err := s.proxy.TokenPool().GetToken()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "no_token", "未找到可用的 Trae 账号凭据: "+err.Error())
+		return
+	}
+
+	page := 1
+	pageSize := 20
+	if p := r.URL.Query().Get("page"); p != "" {
+		fmt.Sscanf(p, "%d", &page)
+	}
+	if ps := r.URL.Query().Get("page_size"); ps != "" {
+		fmt.Sscanf(ps, "%d", &pageSize)
+	}
+
+	records, total, err := s.traeClient.GetUsageRecords(r.Context(), token, page, pageSize)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "trae_api_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"total":   total,
+		"page":    page,
+		"records": records,
 	})
 }
 

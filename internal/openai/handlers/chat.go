@@ -153,6 +153,11 @@ func (h *ChatHandler) handleNonStreaming(w http.ResponseWriter, upstreamReq *pro
 			CompletionTokens: state.usage.CompletionTokens,
 			TotalTokens:      state.usage.TotalTokens,
 		}
+		if state.usage.CachedTokens > 0 {
+			resp.Usage.PromptTokensDetails = &transformers.PromptTokensDetails{
+				CachedTokens: state.usage.CachedTokens,
+			}
+		}
 	}
 
 	h.writeJSON(w, http.StatusOK, resp)
@@ -185,6 +190,11 @@ func (h *ChatHandler) handleStreaming(w http.ResponseWriter, upstreamReq *proxy.
 				PromptTokens:     state.usage.PromptTokens,
 				CompletionTokens: state.usage.CompletionTokens,
 				TotalTokens:      state.usage.TotalTokens,
+			}
+			if state.usage.CachedTokens > 0 {
+				resp.Usage.PromptTokensDetails = &transformers.PromptTokensDetails{
+					CachedTokens: state.usage.CachedTokens,
+				}
 			}
 		}
 		h.sendSSE(w, flusher, resp)

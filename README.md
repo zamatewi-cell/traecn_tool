@@ -27,11 +27,17 @@
 
 👉 **[http://localhost:9090/](http://localhost:9090/)** 或 **[http://localhost:9090/dashboard](http://localhost:9090/dashboard)**
 
-- **请求配置一键复制**：展示标准 Base URL（`http://127.0.0.1:9090/v1`）与 API Key 配置；
+- **请求配置一键复制**：展示标准 Base URL（`http://127.0.0.1:9090/v1`）与 API Key 配置，并提供 Cherry Studio / Cline / Codex 一键接入指南；
+- **Trae 官方权益与用量看板**：读取当前本地 Trae 凭据，展示用户昵称、官方头像、会员类型（Free/Pro）、积分余额与权益包额度使用进度条；
 - **API Key 生成器**：支持一键生成随机高安全密钥，或填入自定义密钥接入；
 - **模型全景矩阵**：实时拉取并展示 21 个模型（16 个新内置模型 + 5 个预设模型）的参数、上下文上限与双通道类型；
-- **在线 Playground**：无需打开外部客户端，直接在控制台中与 `DeepSeek-V4.1-Flash`、`Seed-Code` 等模型发起对话测试，实时查看思考链（Reasoning Process）与首字延迟；
-- **用量与日志流**：实时统计会话数、估算 Token 消耗、平均耗时与详细请求历史表格。
+- **在线 Playground 性能四联监控**：
+  - 🚀 **首字延迟 (TTFT)**：精确记录流式响应到达首个 Token 的毫秒数；
+  - ⚡ **平均生成速度**：实时测算大模型吐字速率（Tokens/s）；
+  - 💾 **提示词缓存命中 (Prompt Cache)**：解析并透传 `cached_tokens` 与复用率；
+  - 📊 **上下文占用指示**：直观展示输入占该模型上下文窗口的比例；
+  - 深度思考过程（Reasoning Process）折叠面板；
+- **双重账单流水表格**：支持切换查看「本地实时会话流水」与「Trae 官方云端会话账单 (Official Billing)」。
 
 ---
 

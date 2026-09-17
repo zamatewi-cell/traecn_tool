@@ -153,11 +153,17 @@ type Delta struct {
 	ToolCalls        []DeltaToolCall `json:"tool_calls,omitempty"`
 }
 
+// PromptTokensDetails carries detailed prompt token breakdowns (cache hits).
+type PromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens,omitempty"`
+}
+
 // Usage represents token usage
 type Usage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens        int                  `json:"prompt_tokens"`
+	CompletionTokens    int                  `json:"completion_tokens"`
+	TotalTokens         int                  `json:"total_tokens"`
+	PromptTokensDetails *PromptTokensDetails `json:"prompt_tokens_details,omitempty"`
 }
 
 // RequestTransformer converts OpenAI requests to the upstream payload.
