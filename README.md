@@ -16,6 +16,22 @@
 - **思考链与工具调用**：`<think>` 跨分片切割；`delta.reasoning_content` / `delta.content` 分流；`tools` / `tool_choice` 双向透传。
 - **防护**：Context Projector（栈追踪剥离 + 头尾截断 + 总预算缩减）、敏感词过滤（默认关）、并发/间隔限流。
 - **模型注册表**：内置 16 个模型（含 MaxTokens / ContextWindow / 别名），启动后通过 `model_list` 动态合并上游预设模型。
+- **可视化 WebUI 控制台**：单 exe 文件内置现代化暗黑主题管理仪表盘（零前端依赖），支持 Base URL 复制、API Key 生成与管理、21 个模型全景筛选、在线即时测试 Playground（支持思考链与流式渲染）以及实时请求与 Token 用量监控流水。
+- **双重运行模式**：支持原生独立进程后台运行，亦可配合配套 Electron 桌面端 `traecn-tools` 实现系统托盘一键启停与可视化管理。
+
+---
+
+## 可视化管理控制台 (WebUI)
+
+服务启动后，在浏览器直接打开根路径即可进入管理控制台：
+
+👉 **[http://localhost:9090/](http://localhost:9090/)** 或 **[http://localhost:9090/dashboard](http://localhost:9090/dashboard)**
+
+- **请求配置一键复制**：展示标准 Base URL（`http://127.0.0.1:9090/v1`）与 API Key 配置；
+- **API Key 生成器**：支持一键生成随机高安全密钥，或填入自定义密钥接入；
+- **模型全景矩阵**：实时拉取并展示 21 个模型（16 个新内置模型 + 5 个预设模型）的参数、上下文上限与双通道类型；
+- **在线 Playground**：无需打开外部客户端，直接在控制台中与 `DeepSeek-V4.1-Flash`、`Seed-Code` 等模型发起对话测试，实时查看思考链（Reasoning Process）与首字延迟；
+- **用量与日志流**：实时统计会话数、估算 Token 消耗、平均耗时与详细请求历史表格。
 
 ---
 

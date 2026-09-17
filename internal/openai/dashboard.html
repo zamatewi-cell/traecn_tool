@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trae Proxy - 可视化管理控制台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#ecfdf5',
+              500: '#10b981',
+              600: '#059669',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    pre, code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #18181b; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen flex flex-col antialiased">
+  <!-- 顶部导航 -->
+  <header class="border-b border-zinc-800 bg-zinc-900/60 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-500 flex items-center justify-center font-black text-zinc-950 text-lg shadow-lg shadow-emerald-500/20">
+          T
+        </div>
+        <div>
+          <div class="font-bold text-base tracking-tight flex items-center gap-2">
+            <span>Trae Proxy 控制台</span>
+            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">v0.1.0</span>
+          </div>
+          <p class="text-xs text-zinc-400">OpenAI / Anthropic / Codex 协议网关</p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-4">
+        <div class="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-zinc-800/80 border border-zinc-700/50 text-xs">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="text-zinc-300">代理状态:</span>
+          <span id="server-status" class="font-semibold text-emerald-400">运行中</span>
+          <span class="text-zinc-500">|</span>
+          <span class="text-zinc-400">端口: <strong class="text-zinc-200" id="server-port">9090</strong></span>
+        </div>
+        <a href="https://github.com/zamatewi-cell/traecn_tool" target="_blank" class="text-xs text-zinc-400 hover:text-zinc-200 transition-colors flex items-center gap-1">
+          <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+          <span>GitHub</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- 主容器 -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8">
+    
+    <!-- 第一行：服务连接配置与 API Key 生成器 -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      
+      <!-- API 地址卡片 -->
+      <div class="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between shadow-sm">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">请求地址 (Base URL)</span>
+            <span class="px-2 py-0.5 text-[10px] rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">OpenAI 兼容</span>
+          </div>
+          <div class="bg-zinc-950 border border-zinc-800/80 rounded-xl p-3 font-mono text-sm text-emerald-400 break-all select-all flex items-center justify-between" id="base-url-box">
+            <span id="base-url-text">http://127.0.0.1:9090/v1</span>
+            <button onclick="copyToClipboard('base-url-text', 'url-copy-badge')" class="p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors ml-2" title="复制请求地址">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+            </button>
+          </div>
+          <p class="text-xs text-zinc-400 mt-2">在 Cherry Studio / NextChat / Cline 中填入作为接口地址。</p>
+        </div>
+        <div class="mt-4 pt-3 border-t border-zinc-800/50 flex items-center justify-between text-xs text-zinc-500">
+          <span>健康检查: <strong class="text-emerald-400">正常 (OK)</strong></span>
+          <span id="url-copy-badge" class="text-emerald-400 font-medium opacity-0 transition-opacity">已复制到剪贴板!</span>
+        </div>
+      </div>
+
+      <!-- API Key 管理器 -->
+      <div class="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between shadow-sm">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">API 访问密钥 (API Key)</span>
+            <button onclick="generateNewKey()" class="text-xs text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+              <span>随机生成</span>
+            </button>
+          </div>
+          <div class="bg-zinc-950 border border-zinc-800/80 rounded-xl p-3 font-mono text-sm text-cyan-400 break-all select-all flex items-center justify-between" id="api-key-box">
+            <span id="api-key-text">sk-trae-proxy-local-dev</span>
+            <button onclick="copyToClipboard('api-key-text', 'key-copy-badge')" class="p-1.5 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors ml-2" title="复制密钥">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+            </button>
+          </div>
+          <p class="text-xs text-zinc-400 mt-2">本地默认不强校验或可配置自定义 API Key。</p>
+        </div>
+        <div class="mt-4 pt-3 border-t border-zinc-800/50 flex items-center justify-between text-xs text-zinc-500">
+          <span>当前授权: <strong class="text-zinc-300">本地放行 / 自定义 Key</strong></span>
+          <span id="key-copy-badge" class="text-cyan-400 font-medium opacity-0 transition-opacity">已复制到剪贴板!</span>
+        </div>
+      </div>
+
+      <!-- 服务控制与客户端联动 -->
+      <div class="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 flex flex-col justify-between shadow-sm">
+        <div>
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400">服务控制与管理方式</span>
+            <span class="px-2 py-0.5 text-[10px] rounded bg-purple-500/10 text-purple-400 border border-purple-500/20">双重运行模式</span>
+          </div>
+          <div class="space-y-2 text-xs text-zinc-300">
+            <div class="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span>独立进程命令行</span>
+              </div>
+              <code class="text-zinc-400">./trae-proxy.exe</code>
+            </div>
+            <div class="flex items-center justify-between p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-indigo-400"></span>
+                <span>Electron 桌面客户端</span>
+              </div>
+              <span class="text-indigo-400">traecn-tools (UI一键启停)</span>
+            </div>
+          </div>
+        </div>
+        <div class="mt-4 pt-3 border-t border-zinc-800/50 flex items-center justify-between text-xs">
+          <span class="text-zinc-400">停止服务: 命令行按 <code class="text-amber-300">Ctrl+C</code></span>
+          <button onclick="refreshStats()" class="text-zinc-400 hover:text-zinc-200 transition-colors">刷新监控</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 第二行：使用情况统计卡片 -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div class="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-4">
+        <div class="text-xs text-zinc-400">可用模型总数</div>
+        <div class="text-2xl font-bold text-zinc-100 mt-1" id="stat-model-count">21</div>
+        <div class="text-[11px] text-emerald-400 mt-1">16 个内置新模型 + 5 预设</div>
+      </div>
+      <div class="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-4">
+        <div class="text-xs text-zinc-400">会话请求总数</div>
+        <div class="text-2xl font-bold text-cyan-400 mt-1" id="stat-req-count">0</div>
+        <div class="text-[11px] text-zinc-500 mt-1">实时统计更新</div>
+      </div>
+      <div class="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-4">
+        <div class="text-xs text-zinc-400">Token 消耗估算</div>
+        <div class="text-2xl font-bold text-emerald-400 mt-1" id="stat-token-count">0</div>
+        <div class="text-[11px] text-zinc-500 mt-1">含 Prompt 与 Completion</div>
+      </div>
+      <div class="bg-zinc-900/60 border border-zinc-800/80 rounded-xl p-4">
+        <div class="text-xs text-zinc-400">平均响应耗时</div>
+        <div class="text-2xl font-bold text-purple-400 mt-1" id="stat-avg-time">0 ms</div>
+        <div class="text-[11px] text-zinc-500 mt-1">TTFT 首字延迟</div>
+      </div>
+    </div>
+
+    <!-- 第三行：模型全景列表 与 在线测试 Playground -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+      
+      <!-- 左侧：模型全景列表 (5列) -->
+      <div class="lg:col-span-5 space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-base font-bold text-zinc-100 flex items-center gap-2">
+              <span>模型列表</span>
+              <span class="text-xs font-normal text-zinc-400" id="model-count-tag">(21 个)</span>
+            </h2>
+            <p class="text-xs text-zinc-400">支持双通道智能路由派发</p>
+          </div>
+          <div class="relative">
+            <input type="text" id="model-search" placeholder="搜索模型名称..." class="bg-zinc-900 border border-zinc-800 text-xs px-3 py-1.5 rounded-lg focus:outline-none focus:border-emerald-500 transition-colors w-40">
+          </div>
+        </div>
+
+        <!-- 模型分类过滤标签 -->
+        <div class="flex gap-2 text-xs">
+          <button onclick="filterModels('all')" class="model-filter-btn px-2.5 py-1 rounded-md bg-zinc-800 text-zinc-100 font-medium" data-filter="all">全部 (21)</button>
+          <button onclick="filterModels('agent')" class="model-filter-btn px-2.5 py-1 rounded-md bg-zinc-900 text-zinc-400 hover:text-zinc-200" data-filter="agent">新内置模型 (16)</button>
+          <button onclick="filterModels('legacy')" class="model-filter-btn px-2.5 py-1 rounded-md bg-zinc-900 text-zinc-400 hover:text-zinc-200" data-filter="legacy">旧预设 (5)</button>
+        </div>
+
+        <!-- 模型列表滚动卡片 -->
+        <div class="bg-zinc-900/70 border border-zinc-800 rounded-2xl p-3 max-h-[600px] overflow-y-auto custom-scrollbar space-y-2" id="models-container">
+          <div class="text-center py-12 text-zinc-500 text-xs">加载模型列表中...</div>
+        </div>
+      </div>
+
+      <!-- 右侧：在线即时测试 Playground (7列) -->
+      <div class="lg:col-span-7 bg-zinc-900/80 border border-zinc-800 rounded-2xl p-6 flex flex-col shadow-sm">
+        <div class="flex items-center justify-between mb-4 pb-4 border-b border-zinc-800">
+          <div>
+            <h2 class="text-base font-bold text-zinc-100 flex items-center gap-2">
+              <span>在线对话测试 (Playground)</span>
+              <span class="text-xs font-medium px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">实时验证</span>
+            </h2>
+            <p class="text-xs text-zinc-400">支持流式增量输出与深度思考链 (Reasoning)</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <label class="flex items-center gap-1.5 text-xs text-zinc-300 cursor-pointer">
+              <input type="checkbox" id="test-stream" checked class="rounded bg-zinc-800 border-zinc-700 text-emerald-500 focus:ring-0">
+              <span>流式传输 (Stream)</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Playground 表单 -->
+        <div class="space-y-4 flex-1 flex flex-col">
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-zinc-400 mb-1">选择请求模型</label>
+              <select id="test-model" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono text-emerald-400 focus:outline-none focus:border-emerald-500">
+                <option value="DeepSeek-V4.1-Flash" selected>DeepSeek-V4.1-Flash (新内置模型)</option>
+                <option value="Seed-Code">Seed-Code (新内置代码模型)</option>
+                <option value="GLM-5.3">GLM-5.3 (新内置模型)</option>
+                <option value="deepseek-V3">deepseek-V3 (Legacy 预设模型)</option>
+                <option value="Doubao_1_5_thinking_pro">Doubao_1_5_thinking_pro (Legacy)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-zinc-400 mb-1">系统提示词 (System Prompt - 可选)</label>
+              <input type="text" id="test-system" placeholder="你是一个严谨且乐于助人的 AI 专家..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-300 focus:outline-none focus:border-emerald-500">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-medium text-zinc-400 mb-1">用户消息 (Prompt)</label>
+            <textarea id="test-prompt" rows="3" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-3 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500 custom-scrollbar resize-none" placeholder="输入你想测试的问题，例如：写一首关于秋天的七言绝句..."></textarea>
+          </div>
+
+          <div class="flex items-center justify-between">
+            <div class="text-[11px] text-zinc-500 flex items-center gap-3">
+              <span id="test-timing">耗时: --</span>
+              <span id="test-tokens">Token: --</span>
+            </div>
+            <button id="test-send-btn" onclick="sendTestChat()" class="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-zinc-950 font-bold text-xs shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+              <span>发起请求</span>
+            </button>
+          </div>
+
+          <!-- 响应内容输出区域 -->
+          <div class="flex-1 min-h-[220px] bg-zinc-950 border border-zinc-800 rounded-xl p-4 flex flex-col space-y-3 overflow-hidden">
+            
+            <!-- 思考链展示面板 -->
+            <div id="test-reasoning-panel" class="hidden rounded-lg bg-zinc-900/90 border border-zinc-800 p-3 space-y-1.5 text-xs">
+              <div class="flex items-center justify-between text-[11px] text-cyan-400 font-semibold cursor-pointer select-none" onclick="toggleReasoning()">
+                <span class="flex items-center gap-1.5">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path></svg>
+                  <span>深度思考过程 (Reasoning Process)</span>
+                </span>
+                <span id="reasoning-toggle-icon" class="text-zinc-500 text-[10px]">折叠 ▲</span>
+              </div>
+              <div id="test-reasoning-content" class="text-zinc-400 font-mono text-[11px] leading-relaxed max-h-40 overflow-y-auto custom-scrollbar whitespace-pre-wrap"></div>
+            </div>
+
+            <!-- 最终回答正文面板 -->
+            <div class="flex-1 overflow-y-auto custom-scrollbar">
+              <div class="text-[11px] text-zinc-500 mb-1 flex items-center justify-between">
+                <span>模型回答</span>
+                <span id="stream-status-badge" class="hidden text-emerald-400">正在生成...</span>
+              </div>
+              <div id="test-response-content" class="text-xs text-zinc-200 leading-relaxed whitespace-pre-wrap">在此输入消息并点击“发起请求”，即可实时看到返回结果。</div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 第四行：实时请求日志流水 -->
+    <div class="bg-zinc-900/80 border border-zinc-800 rounded-2xl p-5 space-y-3">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-sm font-bold text-zinc-100 flex items-center gap-2">
+            <span>实时请求流水 (Activity Log)</span>
+            <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+          </h3>
+          <p class="text-xs text-zinc-400">记录当前页面会话中的调用详情与性能指标</p>
+        </div>
+        <button onclick="clearLogs()" class="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">清空日志</button>
+      </div>
+      <div class="bg-zinc-950 border border-zinc-800/80 rounded-xl overflow-hidden">
+        <table class="w-full text-left text-xs">
+          <thead class="bg-zinc-900/60 text-zinc-400 border-b border-zinc-800 font-medium">
+            <tr>
+              <th class="py-2.5 px-4">时间</th>
+              <th class="py-2.5 px-4">请求模型</th>
+              <th class="py-2.5 px-4">通道类型</th>
+              <th class="py-2.5 px-4">模式</th>
+              <th class="py-2.5 px-4">状态</th>
+              <th class="py-2.5 px-4">总耗时</th>
+              <th class="py-2.5 px-4 text-right">Tokens</th>
+            </tr>
+          </thead>
+          <tbody id="logs-table-body" class="divide-y divide-zinc-800/40 font-mono text-zinc-300">
+            <tr id="empty-log-row">
+              <td colspan="7" class="py-8 text-center text-zinc-600 font-sans">暂无请求记录，请通过上方 Playground 或外部工具发起对话。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="border-t border-zinc-900 py-6 text-center text-xs text-zinc-600">
+    Trae Proxy v0.1.0 &middot; 零成本本地 AI 代理网关 &middot; 享受编程的乐趣
+  </footer>
+
+  <!-- 脚本逻辑 -->
+  <script>
+    let allModels = [];
+    let currentFilter = 'all';
+    let totalRequests = 0;
+    let totalTokens = 0;
+    let totalLatency = 0;
+
+    const legacyModels = ["seed_m8", "Doubao_1_5_thinking_pro", "deepseek-R1", "deepseek-V3", "deepseek-V3-0324"];
+
+    // 页面初始化
+    window.addEventListener('DOMContentLoaded', () => {
+      loadModels();
+      // 定时刷新健康检查
+      setInterval(checkHealth, 10000);
+    });
+
+    async function checkHealth() {
+      try {
+        const res = await fetch('/health');
+        if (res.ok) {
+          document.getElementById('server-status').textContent = '运行中';
+          document.getElementById('server-status').className = 'font-semibold text-emerald-400';
+        }
+      } catch (e) {
+        document.getElementById('server-status').textContent = '离线 / 连接中断';
+        document.getElementById('server-status').className = 'font-semibold text-rose-500';
+      }
+    }
+
+    async function loadModels() {
+      const container = document.getElementById('models-container');
+      try {
+        const res = await fetch('/v1/models');
+        const json = await res.json();
+        allModels = json.data || [];
+        renderModels();
+        populateSelect();
+      } catch (e) {
+        container.innerHTML = '<div class="text-center py-12 text-rose-500 text-xs">加载模型失败，请确认代理服务正常运行。</div>';
+      }
+    }
+
+    function renderModels() {
+      const container = document.getElementById('models-container');
+      const search = document.getElementById('model-search').value.toLowerCase().trim();
+      
+      const filtered = allModels.filter(m => {
+        const isLegacy = legacyModels.includes(m.id);
+        if (currentFilter === 'legacy' && !isLegacy) return false;
+        if (currentFilter === 'agent' && isLegacy) return false;
+        if (search && !m.id.toLowerCase().includes(search) && !(m.display_name && m.display_name.toLowerCase().includes(search))) {
+          return false;
+        }
+        return true;
+      });
+
+      document.getElementById('model-count-tag').textContent = '(' + filtered.length + ' 个)';
+      document.getElementById('stat-model-count').textContent = allModels.length;
+
+      if (filtered.length === 0) {
+        container.innerHTML = '<div class="text-center py-12 text-zinc-500 text-xs">未找到匹配的模型</div>';
+        return;
+      }
+
+      container.innerHTML = filtered.map(m => {
+        const isLegacy = legacyModels.includes(m.id);
+        const channelTag = isLegacy 
+          ? '<span class="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[10px]">Legacy RawChat</span>'
+          : '<span class="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px]">AgentTask 新通道</span>';
+        
+        const hasReasoning = m.id.toLowerCase().includes('thinking') || m.id.toLowerCase().includes('r1') || m.id.toLowerCase().includes('flash');
+
+        return [
+          '<div class="bg-zinc-950 p-3 rounded-xl border border-zinc-800/80 hover:border-zinc-700 transition-all flex items-center justify-between">',
+          '  <div class="space-y-1">',
+          '    <div class="flex items-center gap-2">',
+          '      <strong class="font-mono text-xs text-zinc-100">' + m.id + '</strong>',
+          '      ' + channelTag,
+          '      ' + (hasReasoning ? '<span class="px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 text-[10px]">思考链</span>' : ''),
+          '    </div>',
+          '    <div class="text-[11px] text-zinc-400 flex items-center gap-3">',
+          '      <span>厂商: <strong class="text-zinc-300">' + (m.owned_by || 'Trae') + '</strong></span>',
+          '      <span>上下文: <strong class="text-zinc-300">' + (m.context_window ? Math.round(m.context_window/1024) + 'K' : '32K') + '</strong></span>',
+          '      <span>Max: <strong class="text-zinc-300">' + (m.max_tokens || 8192) + '</strong></span>',
+          '    </div>',
+          '  </div>',
+          '  <button onclick="selectForTest(\'' + m.id + '\')" class="px-2.5 py-1 text-[11px] bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg transition-colors font-sans">',
+          '    测试 &rarr;',
+          '  </button>',
+          '</div>'
+        ].join('\n');
+      }).join('\n');
+    }
+
+    function populateSelect() {
+      const select = document.getElementById('test-model');
+      if (!allModels.length) return;
+      select.innerHTML = allModels.map(m => {
+        const isLegacy = legacyModels.includes(m.id);
+        const tag = isLegacy ? '[Legacy]' : '[New]';
+        return '<option value="' + m.id + '">' + m.id + ' ' + tag + '</option>';
+      }).join('');
+      // 默认选中 DeepSeek-V4.1-Flash
+      if (allModels.find(m => m.id === 'DeepSeek-V4.1-Flash')) {
+        select.value = 'DeepSeek-V4.1-Flash';
+      }
+    }
+
+    function filterModels(filter) {
+      currentFilter = filter;
+      document.querySelectorAll('.model-filter-btn').forEach(btn => {
+        if (btn.getAttribute('data-filter') === filter) {
+          btn.className = 'model-filter-btn px-2.5 py-1 rounded-md bg-zinc-800 text-zinc-100 font-medium';
+        } else {
+          btn.className = 'model-filter-btn px-2.5 py-1 rounded-md bg-zinc-900 text-zinc-400 hover:text-zinc-200';
+        }
+      });
+      renderModels();
+    }
+
+    document.getElementById('model-search').addEventListener('input', renderModels);
+
+    function selectForTest(modelId) {
+      const select = document.getElementById('test-model');
+      select.value = modelId;
+      document.getElementById('test-prompt').focus();
+    }
+
+    function copyToClipboard(elementId, badgeId) {
+      const text = document.getElementById(elementId).innerText.trim();
+      navigator.clipboard.writeText(text).then(() => {
+        const badge = document.getElementById(badgeId);
+        badge.style.opacity = '1';
+        setTimeout(() => { badge.style.opacity = '0'; }, 2000);
+      });
+    }
+
+    function generateNewKey() {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+      let key = 'sk-trae-';
+      for (let i = 0; i < 24; i++) {
+        key += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      document.getElementById('api-key-text').innerText = key;
+    }
+
+    function toggleReasoning() {
+      const panel = document.getElementById('test-reasoning-content');
+      const icon = document.getElementById('reasoning-toggle-icon');
+      if (panel.classList.contains('hidden')) {
+        panel.classList.remove('hidden');
+        icon.textContent = '折叠 ▲';
+      } else {
+        panel.classList.add('hidden');
+        icon.textContent = '展开 ▼';
+      }
+    }
+
+    async function sendTestChat() {
+      const model = document.getElementById('test-model').value;
+      const system = document.getElementById('test-system').value.trim();
+      const prompt = document.getElementById('test-prompt').value.trim();
+      const isStream = document.getElementById('test-stream').checked;
+      const sendBtn = document.getElementById('test-send-btn');
+      const respBox = document.getElementById('test-response-content');
+      const reasoningPanel = document.getElementById('test-reasoning-panel');
+      const reasoningBox = document.getElementById('test-reasoning-content');
+      const streamStatus = document.getElementById('stream-status-badge');
+      const timingBox = document.getElementById('test-timing');
+      const tokensBox = document.getElementById('test-tokens');
+
+      if (!prompt) {
+        alert('请输入测试问题！');
+        return;
+      }
+
+      sendBtn.disabled = true;
+      sendBtn.classList.add('opacity-50');
+      respBox.textContent = '';
+      reasoningBox.textContent = '';
+      reasoningPanel.classList.add('hidden');
+      streamStatus.classList.remove('hidden');
+      timingBox.textContent = '耗时: 计算中...';
+      tokensBox.textContent = 'Token: --';
+
+      const messages = [];
+      if (system) {
+        messages.push({ role: 'system', content: system });
+      }
+      messages.push({ role: 'user', content: prompt });
+
+      const startTime = performance.now();
+      const isLegacy = legacyModels.includes(model);
+      const channelLabel = isLegacy ? 'Legacy' : 'AgentTask';
+
+      try {
+        const response = await fetch('/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + document.getElementById('api-key-text').innerText.trim()
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: messages,
+            stream: isStream
+          })
+        });
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}));
+          throw new Error('HTTP ' + response.status + ': ' + (errData.error?.message || response.statusText));
+        }
+
+        if (isStream) {
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder('utf-8');
+          let buffer = '';
+          let fullContent = '';
+          let fullReasoning = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // 保留不完整的一行
+
+            for (const line of lines) {
+              const trimmed = line.trim();
+              if (!trimmed || trimmed === 'data: [DONE]') continue;
+              if (trimmed.startsWith('data: ')) {
+                try {
+                  const chunk = JSON.parse(trimmed.slice(6));
+                  const delta = chunk.choices?.[0]?.delta || {};
+                  
+                  if (delta.reasoning_content) {
+                    fullReasoning += delta.reasoning_content;
+                    reasoningBox.textContent = fullReasoning;
+                    reasoningPanel.classList.remove('hidden');
+                  }
+                  if (delta.content) {
+                    fullContent += delta.content;
+                    respBox.textContent = fullContent;
+                  }
+                } catch (e) {}
+              }
+            }
+          }
+
+          const duration = Math.round(performance.now() - startTime);
+          const estTokens = Math.round((prompt.length + fullContent.length + fullReasoning.length) * 0.75);
+          streamStatus.classList.add('hidden');
+          timingBox.textContent = '耗时: ' + duration + ' ms';
+          tokensBox.textContent = 'Token: ~' + estTokens;
+
+          addLogEntry(model, channelLabel, '流式', 200, duration, estTokens);
+          updateMetrics(duration, estTokens);
+        } else {
+          const data = await response.json();
+          const duration = Math.round(performance.now() - startTime);
+          const message = data.choices?.[0]?.message || {};
+          
+          if (message.reasoning_content) {
+            reasoningBox.textContent = message.reasoning_content;
+            reasoningPanel.classList.remove('hidden');
+          }
+          respBox.textContent = message.content || '（无文本返回）';
+
+          const tokens = data.usage?.total_tokens || Math.round((prompt.length + (message.content?.length || 0)) * 0.75);
+          streamStatus.classList.add('hidden');
+          timingBox.textContent = '耗时: ' + duration + ' ms';
+          tokensBox.textContent = 'Token: ' + tokens;
+
+          addLogEntry(model, channelLabel, '非流式', 200, duration, tokens);
+          updateMetrics(duration, tokens);
+        }
+      } catch (err) {
+        const duration = Math.round(performance.now() - startTime);
+        streamStatus.classList.add('hidden');
+        timingBox.textContent = '耗时: ' + duration + ' ms (失败)';
+        respBox.textContent = '请求发生错误: ' + err.message;
+        addLogEntry(model, channelLabel, isStream ? '流式' : '非流式', 'ERR', duration, 0);
+      } finally {
+        sendBtn.disabled = false;
+        sendBtn.classList.remove('opacity-50');
+      }
+    }
+
+    function addLogEntry(model, channel, mode, status, duration, tokens) {
+      const tbody = document.getElementById('logs-table-body');
+      const emptyRow = document.getElementById('empty-log-row');
+      if (emptyRow) emptyRow.remove();
+
+      const tr = document.createElement('tr');
+      const now = new Date().toLocaleTimeString();
+      const statusClass = status === 200 ? 'text-emerald-400' : 'text-rose-400';
+
+      tr.innerHTML = [
+        '<td class="py-2.5 px-4 text-zinc-400">' + now + '</td>',
+        '<td class="py-2.5 px-4 text-zinc-100 font-semibold">' + model + '</td>',
+        '<td class="py-2.5 px-4"><span class="px-1.5 py-0.5 rounded text-[10px] ' + (channel === 'Legacy' ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400') + '">' + channel + '</span></td>',
+        '<td class="py-2.5 px-4 text-zinc-400">' + mode + '</td>',
+        '<td class="py-2.5 px-4 ' + statusClass + '">' + status + '</td>',
+        '<td class="py-2.5 px-4 text-zinc-300">' + duration + ' ms</td>',
+        '<td class="py-2.5 px-4 text-right text-zinc-300">' + tokens + '</td>'
+      ].join('');
+
+      tbody.insertBefore(tr, tbody.firstChild);
+    }
+
+    function updateMetrics(duration, tokens) {
+      totalRequests++;
+      totalTokens += tokens;
+      totalLatency += duration;
+
+      document.getElementById('stat-req-count').textContent = totalRequests;
+      document.getElementById('stat-token-count').textContent = totalTokens;
+      document.getElementById('stat-avg-time').textContent = Math.round(totalLatency / totalRequests) + ' ms';
+    }
+
+    function clearLogs() {
+      const tbody = document.getElementById('logs-table-body');
+      tbody.innerHTML = '<tr id="empty-log-row"><td colspan="7" class="py-8 text-center text-zinc-600 font-sans">暂无请求记录，请通过上方 Playground 或外部工具发起对话。</td></tr>';
+    }
+
+    function refreshStats() {
+      checkHealth();
+      loadModels();
+    }
+  </script>
+</body>
+</html>

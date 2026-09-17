@@ -1,10 +1,12 @@
 package openai
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/zamatewi-cell/traecn_tool/internal/models"
@@ -13,6 +15,9 @@ import (
 	"github.com/zamatewi-cell/traecn_tool/internal/protocol"
 	"github.com/zamatewi-cell/traecn_tool/internal/proxy"
 )
+
+//go:embed dashboard.html
+var dashboardHTML []byte
 
 // Server is the OpenAI-compatible API server
 type Server struct {
@@ -71,6 +76,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /v1/queue/status", s.handleQueueStatus)
 	s.mux.HandleFunc("GET /v1/accounts", s.handleAccounts)
 	s.mux.HandleFunc("GET /health", s.handleHealth)
+	s.mux.HandleFunc("GET /dashboard", s.handleDashboard)
 	s.mux.HandleFunc("GET /", s.handleRoot)
 
 	// Apply middlewares
@@ -142,11 +148,30 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": "0.1.0"})
 }
 
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write(dashboardHTML)
+}
+
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+
+	// 如果是浏览器页面访问，优先展示 WebUI 控制台仪表盘
+	accept := r.Header.Get("Accept")
+	if strings.Contains(accept, "text/html") || r.URL.Query().Get("format") == "html" {
+		s.handleDashboard(w, r)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{
-		"name":    "trae-proxy",
-		"version": "0.1.0",
-		"docs":    "https://github.com/zamatewi-cell/traecn_tool",
+		"name":      "trae-proxy",
+		"version":   "0.1.0",
+		"dashboard": "/dashboard",
+		"docs":      "https://github.com/zamatewi-cell/traecn_tool",
 	})
 }
 
@@ -165,8 +190,9 @@ func writeError(w http.ResponseWriter, status int, errType string, message strin
 // ListenAndServe starts the HTTP server
 func (s *Server) ListenAndServe(addr string) error {
 	s.logger.Info("starting OpenAI-compatible API server", "addr", addr)
-	s.logger.Info(fmt.Sprintf("API: http://localhost%s/v1/chat/completions", addr))
-	s.logger.Info(fmt.Sprintf("Models: http://localhost%s/v1/models", addr))
-	s.logger.Info(fmt.Sprintf("Queue: http://localhost%s/v1/queue/status", addr))
+	s.logger.Info(fmt.Sprintf("Dashboard: http://localhost%s/", addr))
+	s.logger.Info(fmt.Sprintf("API Base:  http://localhost%s/v1", addr))
+	s.logger.Info(fmt.Sprintf("Models:    http://localhost%s/v1/models", addr))
+	s.logger.Info(fmt.Sprintf("Queue:     http://localhost%s/v1/queue/status", addr))
 	return http.ListenAndServe(addr, s)
 }
