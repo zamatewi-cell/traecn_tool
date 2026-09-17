@@ -43,7 +43,7 @@ var builtinModels = []ModelInfo{
 	{ModelID: "GLM-5.2", DisplayName: "GLM 5.2", Provider: "Zhipu", MaxTokens: 16384, ContextWindow: 128000, Source: "builtin"},
 
 	// DeepSeek family
-	{ModelID: "DeepSeek-V4.1", DisplayName: "DeepSeek V4.1", Provider: "DeepSeek", MaxTokens: 16384, ContextWindow: 128000, Source: "builtin"},
+	{ModelID: "DeepSeek-V4.1-Flash", DisplayName: "DeepSeek V4.1 Flash", Provider: "DeepSeek", MaxTokens: 16384, ContextWindow: 128000, Aliases: []string{"DeepSeek-V4.1"}, Source: "builtin"},
 	{ModelID: "DeepSeek-V4-Flash", DisplayName: "DeepSeek V4 Flash", Provider: "DeepSeek", MaxTokens: 8192, ContextWindow: 128000, Aliases: []string{"deepseek-v4", "deepseek-chat"}, Source: "builtin", UpstreamID: "deepseek-V3"},
 	{ModelID: "DeepSeek-V4-Pro", DisplayName: "DeepSeek V4 Pro", Provider: "DeepSeek", MaxTokens: 16384, ContextWindow: 128000, Aliases: []string{"deepseek-r1", "deepseek-reasoner"}, Source: "builtin", UpstreamID: "deepseek-R1"},
 

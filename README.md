@@ -58,7 +58,7 @@ curl http://localhost:9090/v1/models
 | Zhipu | `GLM-5.3-Flash` | | （远程刷新后填入） | 8192 | 128K |
 | Zhipu | `GLM-5.3` | `glm-5`, `glm` | （远程刷新后填入） | 16384 | 128K |
 | Zhipu | `GLM-5.2` | | （远程刷新后填入） | 16384 | 128K |
-| DeepSeek | `DeepSeek-V4.1` | | （远程刷新后填入） | 16384 | 128K |
+| DeepSeek | `DeepSeek-V4.1-Flash` | | （远程刷新后填入） | 16384 | 128K |
 | DeepSeek | `DeepSeek-V4-Flash` | `deepseek-v4`, `deepseek-chat` | `deepseek-V3` | 8192 | 128K |
 | DeepSeek | `DeepSeek-V4-Pro` | `deepseek-r1`, `deepseek-reasoner` | `deepseek-R1` | 16384 | 128K |
 | Moonshot | `Kimi-K3` | `kimi` | （远程刷新后填入） | 16384 | 256K |

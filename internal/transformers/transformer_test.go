@@ -121,7 +121,8 @@ func TestRequestTransformer_mapModel_KnownModels(t *testing.T) {
 		{"qwen", "Qwen3.7-Plus"},
 		{"kimi", "Kimi-K3"},
 		{"doubao", "Seed-Code"},
-		{"DeepSeek-V4.1", "DeepSeek-V4.1"},
+		{"DeepSeek-V4.1-Flash", "DeepSeek-V4.1-Flash"},
+		{"DeepSeek-V4.1", "DeepSeek-V4.1-Flash"},
 		{"totally-unknown-xyz", models.DefaultModel},
 	}
 

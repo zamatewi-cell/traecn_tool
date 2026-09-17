@@ -17,7 +17,7 @@ var requiredModels = []struct {
 	{"GLM-5.3-Flash", "Zhipu"},
 	{"GLM-5.3", "Zhipu"},
 	{"GLM-5.2", "Zhipu"},
-	{"DeepSeek-V4.1", "DeepSeek"},
+	{"DeepSeek-V4.1-Flash", "DeepSeek"},
 	{"DeepSeek-V4-Flash", "DeepSeek"},
 	{"DeepSeek-V4-Pro", "DeepSeek"},
 	{"Kimi-K3", "Moonshot"},
