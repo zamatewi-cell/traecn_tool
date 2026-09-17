@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
@@ -36,37 +37,46 @@ type UserInfo struct {
 
 // PayStatus represents user subscription/billing plan
 type PayStatus struct {
-	PlanType      string `json:"plan_type"` // e.g. Free, Pro, Ultra, Express
+	PlanType      string `json:"plan_type"`
 	ExpireAt      int64  `json:"expire_at,omitempty"`
 	IsPayFreshman bool   `json:"is_pay_freshman"`
 }
 
+// UsageSummary represents account total credits pool
+type UsageSummary struct {
+	TotalAmount      float64 `json:"total_amount"`
+	ConsumedAmount   float64 `json:"consumed_amount"`
+	RemainingAmount  float64 `json:"remaining_amount"`
+	ConsumptionRatio float64 `json:"consumption_ratio"`
+}
+
 // EntitlementPack represents a quota package (e.g. 500 requests/month)
 type EntitlementPack struct {
-	PackID     string `json:"pack_id"`
-	PackName   string `json:"pack_name"`
-	PackDesc   string `json:"pack_desc"`
-	TotalQuota int64  `json:"total_quota"`
-	UsedQuota  int64  `json:"used_quota"`
-	Unit       string `json:"unit"`
-	ExpireTime int64  `json:"expire_time"`
-	Status     int    `json:"status"`
+	PackID     string  `json:"pack_id"`
+	PackName   string  `json:"pack_name"`
+	PackDesc   string  `json:"pack_desc"`
+	TotalQuota float64 `json:"total_quota"`
+	UsedQuota  float64 `json:"used_quota"`
+	Unit       string  `json:"unit"`
+	ExpireTime int64   `json:"expire_time"`
+	Status     int     `json:"status"`
 }
 
 // CheckinInfo represents daily checkin status & credits balance
 type CheckinInfo struct {
-	CheckedIn  bool  `json:"checked_in"`
-	CanCheckin bool  `json:"can_checkin"`
-	Credits    int64 `json:"credits"`
+	CheckedIn    bool    `json:"checked_in"`
+	CanCheckin   bool    `json:"can_checkin"`
+	Credits      float64 `json:"credits"`
+	ExtraCredits float64 `json:"extra_credits"`
 }
 
 // CheckinResult is the return value of ClaimCheckin
 type CheckinResult struct {
-	Success        bool   `json:"success"`
-	AlreadyClaimed bool   `json:"already_claimed"`
-	CreditsEarned  int64  `json:"credits_earned"`
-	NewBalance     int64  `json:"new_balance"`
-	Message        string `json:"message"`
+	Success        bool    `json:"success"`
+	AlreadyClaimed bool    `json:"already_claimed"`
+	CreditsEarned  float64 `json:"credits_earned"`
+	NewBalance     float64 `json:"new_balance"`
+	Message        string  `json:"message"`
 }
 
 // UsageSessionRecord represents a session usage record from Trae cloud
@@ -85,10 +95,12 @@ type UsageSessionRecord struct {
 
 // ProfileResponse bundles all profile details together
 type ProfileResponse struct {
-	UserInfo     UserInfo          `json:"user_info"`
-	PayStatus    PayStatus         `json:"pay_status"`
-	Entitlements []EntitlementPack `json:"entitlements"`
-	Checkin      CheckinInfo       `json:"checkin"`
+	UserInfo         UserInfo          `json:"user_info"`
+	PayStatus        PayStatus         `json:"pay_status"`
+	UsageSummary     UsageSummary      `json:"usage_summary"`
+	SpendableCredits float64           `json:"spendable_credits"`
+	Entitlements     []EntitlementPack `json:"entitlements"`
+	Checkin          CheckinInfo       `json:"checkin"`
 }
 
 // Client manages calls to Trae backend APIs
@@ -230,7 +242,12 @@ func (c *Client) GetPayStatus(ctx context.Context, token string) (*PayStatus, er
 		}
 
 		var parsed struct {
-			Code int `json:"code"`
+			Code               int    `json:"code"`
+			UserPayIdentityStr string `json:"user_pay_identity_str"`
+			IsPayFreshman      bool   `json:"is_pay_freshman"`
+			Detail             struct {
+				SubscriptionRenewTime int64 `json:"subscription_renew_time"`
+			} `json:"detail"`
 			Data struct {
 				UserPayIdentityStr string `json:"user_pay_identity_str"`
 				IsPayFreshman      bool   `json:"is_pay_freshman"`
@@ -247,9 +264,15 @@ func (c *Client) GetPayStatus(ctx context.Context, token string) (*PayStatus, er
 			} `json:"result"`
 		}
 		if err := json.Unmarshal(raw, &parsed); err == nil {
-			plan := parsed.Data.UserPayIdentityStr
-			renew := parsed.Data.Detail.SubscriptionRenewTime
-			freshman := parsed.Data.IsPayFreshman
+			plan := parsed.UserPayIdentityStr
+			renew := parsed.Detail.SubscriptionRenewTime
+			freshman := parsed.IsPayFreshman
+
+			if plan == "" {
+				plan = parsed.Data.UserPayIdentityStr
+				renew = parsed.Data.Detail.SubscriptionRenewTime
+				freshman = parsed.Data.IsPayFreshman
+			}
 			if plan == "" {
 				plan = parsed.Result.UserPayIdentityStr
 				renew = parsed.Result.Detail.SubscriptionRenewTime
@@ -268,8 +291,14 @@ func (c *Client) GetPayStatus(ctx context.Context, token string) (*PayStatus, er
 	return &PayStatus{PlanType: "Free"}, nil
 }
 
-// GetEntitlements retrieves quota package usage (500/month, etc.)
-func (c *Client) GetEntitlements(ctx context.Context, token string) ([]EntitlementPack, error) {
+// GetEntitlementsResult holds both summary and pack details
+type GetEntitlementsResult struct {
+	Summary UsageSummary
+	Packs   []EntitlementPack
+}
+
+// GetEntitlements retrieves quota package usage & total amount
+func (c *Client) GetEntitlements(ctx context.Context, token string) (*GetEntitlementsResult, error) {
 	headers := map[string]string{
 		"Authorization": "Cloud-IDE-JWT " + token,
 	}
@@ -281,60 +310,129 @@ func (c *Client) GetEntitlements(ctx context.Context, token string) ([]Entitleme
 			continue
 		}
 
+		type packItem struct {
+			PackID              string  `json:"entitlement_pack_id"`
+			PackName            string  `json:"entitlement_pack_name"`
+			GroupName           string  `json:"group_name"`
+			DisplayDesc         string  `json:"display_desc"`
+			PackDesc            string  `json:"entitlement_pack_desc"`
+			Status              int     `json:"status"`
+			ExpireTime          int64   `json:"expire_time"`
+			TotalQuota          float64 `json:"total_quota"`
+			Quota               float64 `json:"quota"`
+			CreditsLimit        float64 `json:"credits_limit"`
+			EntitlementBaseInfo struct {
+				ProductType int `json:"product_type"`
+				Quota       struct {
+					TotalQuota   float64 `json:"total_quota"`
+					CreditsLimit float64 `json:"credits_limit"`
+					Unit         string  `json:"unit"`
+				} `json:"quota"`
+			} `json:"entitlement_base_info"`
+			Usage struct {
+				CreditsAmount float64 `json:"credits_amount"`
+				UsedQuota     float64 `json:"used_quota"`
+			} `json:"usage"`
+		}
+
 		var parsed struct {
-			Code int `json:"code"`
-			Data struct {
-				UserEntitlementPackList []struct {
-					PackID              string `json:"entitlement_pack_id"`
-					PackName            string `json:"entitlement_pack_name"`
-					PackDesc            string `json:"entitlement_pack_desc"`
-					Status              int    `json:"status"`
-					ExpireTime          int64  `json:"expire_time"`
-					EntitlementBaseInfo struct {
-						ProductType int `json:"product_type"`
-						Quota       struct {
-							TotalQuota int64  `json:"total_quota"`
-							Unit       string `json:"unit"`
-						} `json:"quota"`
-					} `json:"entitlement_base_info"`
-					Usage struct {
-						CreditsAmount int64 `json:"credits_amount"`
-					} `json:"usage"`
-				} `json:"user_entitlement_pack_list"`
+			Code         int `json:"code"`
+			UsageSummary struct {
+				ConsumedAmount   float64 `json:"consumed_amount"`
+				ConsumptionRatio float64 `json:"consumption_ratio"`
+				TotalAmount      float64 `json:"total_amount"`
+			} `json:"usage_summary"`
+			UserEntitlementPackList []packItem `json:"user_entitlement_pack_list"`
+			Data                    struct {
+				UsageSummary struct {
+					ConsumedAmount   float64 `json:"consumed_amount"`
+					ConsumptionRatio float64 `json:"consumption_ratio"`
+					TotalAmount      float64 `json:"total_amount"`
+				} `json:"usage_summary"`
+				UserEntitlementPackList []packItem `json:"user_entitlement_pack_list"`
 			} `json:"data"`
 		}
 
-		if err := json.Unmarshal(raw, &parsed); err == nil && len(parsed.Data.UserEntitlementPackList) > 0 {
+		if err := json.Unmarshal(raw, &parsed); err == nil {
+			// Extract summary
+			summary := UsageSummary{
+				TotalAmount:      parsed.UsageSummary.TotalAmount,
+				ConsumedAmount:   parsed.UsageSummary.ConsumedAmount,
+				ConsumptionRatio: parsed.UsageSummary.ConsumptionRatio,
+			}
+			if summary.TotalAmount == 0 && parsed.Data.UsageSummary.TotalAmount > 0 {
+				summary.TotalAmount = parsed.Data.UsageSummary.TotalAmount
+				summary.ConsumedAmount = parsed.Data.UsageSummary.ConsumedAmount
+				summary.ConsumptionRatio = parsed.Data.UsageSummary.ConsumptionRatio
+			}
+			summary.RemainingAmount = math.Max(0, summary.TotalAmount-summary.ConsumedAmount)
+
+			rawPacks := parsed.UserEntitlementPackList
+			if len(rawPacks) == 0 {
+				rawPacks = parsed.Data.UserEntitlementPackList
+			}
+
 			var packs []EntitlementPack
-			for _, item := range parsed.Data.UserEntitlementPackList {
-				// Filter out promo product_type == 3
+			for _, item := range rawPacks {
 				if item.EntitlementBaseInfo.ProductType == 3 {
 					continue
 				}
-				name := item.PackName
+
+				name := item.GroupName
+				if name == "" {
+					name = item.DisplayDesc
+				}
+				if name == "" {
+					name = item.PackName
+				}
 				if name == "" {
 					name = "通用权益包"
 				}
+
+				total := item.EntitlementBaseInfo.Quota.CreditsLimit
+				if total == 0 {
+					total = item.EntitlementBaseInfo.Quota.TotalQuota
+				}
+				if total == 0 {
+					total = item.CreditsLimit
+				}
+				if total == 0 {
+					total = item.TotalQuota
+				}
+				if total == 0 {
+					total = item.Quota
+				}
+
+				used := item.Usage.CreditsAmount
+				if used == 0 {
+					used = item.Usage.UsedQuota
+				}
+
 				unit := item.EntitlementBaseInfo.Quota.Unit
 				if unit == "" {
-					unit = "次"
+					unit = "积分"
 				}
+
 				packs = append(packs, EntitlementPack{
 					PackID:     item.PackID,
 					PackName:   name,
 					PackDesc:   item.PackDesc,
-					TotalQuota: item.EntitlementBaseInfo.Quota.TotalQuota,
-					UsedQuota:  item.Usage.CreditsAmount,
+					TotalQuota: total,
+					UsedQuota:  used,
 					Unit:       unit,
 					ExpireTime: item.ExpireTime,
 					Status:     item.Status,
 				})
 			}
-			return packs, nil
+
+			return &GetEntitlementsResult{
+				Summary: summary,
+				Packs:   packs,
+			}, nil
 		}
 	}
 
-	return []EntitlementPack{}, nil
+	return &GetEntitlementsResult{}, nil
 }
 
 // GetCheckinStatus retrieves credits balance and today's checkin status
@@ -357,12 +455,18 @@ func (c *Client) GetCheckinStatus(ctx context.Context, token string, deviceID st
 	}
 
 	var parsed struct {
-		Code int `json:"code"`
-		Data struct {
-			CheckedIn  bool  `json:"checked_in"`
-			CanCheckin bool  `json:"can_checkin"`
-			Credits    int64 `json:"credits"`
-			Enable     bool  `json:"enable"`
+		Code         int     `json:"code"`
+		CheckedIn    bool    `json:"checked_in"`
+		CanCheckin   bool    `json:"can_checkin"`
+		Credits      float64 `json:"credits"`
+		ExtraCredits float64 `json:"extra_credits"`
+		Enable       bool    `json:"enable"`
+		Data         struct {
+			CheckedIn    bool    `json:"checked_in"`
+			CanCheckin   bool    `json:"can_checkin"`
+			Credits      float64 `json:"credits"`
+			ExtraCredits float64 `json:"extra_credits"`
+			Enable       bool    `json:"enable"`
 		} `json:"data"`
 	}
 
@@ -370,10 +474,22 @@ func (c *Client) GetCheckinStatus(ctx context.Context, token string, deviceID st
 		return nil, err
 	}
 
+	checkedIn := parsed.CheckedIn || parsed.Data.CheckedIn
+	credits := parsed.Credits
+	if credits == 0 {
+		credits = parsed.Data.Credits
+	}
+	extra := parsed.ExtraCredits
+	if extra == 0 {
+		extra = parsed.Data.ExtraCredits
+	}
+	enable := parsed.Enable || parsed.Data.Enable
+
 	return &CheckinInfo{
-		CheckedIn:  parsed.Data.CheckedIn,
-		CanCheckin: parsed.Data.Enable && !parsed.Data.CheckedIn,
-		Credits:    parsed.Data.Credits,
+		CheckedIn:    checkedIn,
+		CanCheckin:   enable && !checkedIn,
+		Credits:      credits,
+		ExtraCredits: extra,
 	}, nil
 }
 
@@ -395,11 +511,13 @@ func (c *Client) ClaimCheckin(ctx context.Context, token string, deviceID string
 	}
 
 	var parsed struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-		Data    struct {
-			CreditsEarned int64 `json:"credits_earned"`
-			NewBalance    int64 `json:"credits"`
+		Code          int     `json:"code"`
+		Message       string  `json:"message"`
+		CreditsEarned float64 `json:"credits_earned"`
+		Credits       float64 `json:"credits"`
+		Data          struct {
+			CreditsEarned float64 `json:"credits_earned"`
+			NewBalance    float64 `json:"credits"`
 		} `json:"data"`
 	}
 
@@ -407,11 +525,20 @@ func (c *Client) ClaimCheckin(ctx context.Context, token string, deviceID string
 		return nil, err
 	}
 
+	earned := parsed.CreditsEarned
+	if earned == 0 {
+		earned = parsed.Data.CreditsEarned
+	}
+	balance := parsed.Credits
+	if balance == 0 {
+		balance = parsed.Data.NewBalance
+	}
+
 	if parsed.Code == 0 || parsed.Code == 200 {
 		return &CheckinResult{
 			Success:       true,
-			CreditsEarned: parsed.Data.CreditsEarned,
-			NewBalance:    parsed.Data.NewBalance,
+			CreditsEarned: earned,
+			NewBalance:    balance,
 			Message:       "签到成功！",
 		}, nil
 	}
@@ -505,7 +632,7 @@ func (c *Client) GetUsageRecords(ctx context.Context, token string, page, pageSi
 	return records, parsed.Data.Total, nil
 }
 
-// GetFullProfile queries all profile data in parallel
+// GetFullProfile queries all profile data in parallel and calculates spendable credits
 func (c *Client) GetFullProfile(ctx context.Context, token string, deviceID string) (*ProfileResponse, error) {
 	resp := &ProfileResponse{}
 
@@ -517,13 +644,29 @@ func (c *Client) GetFullProfile(ctx context.Context, token string, deviceID stri
 	if p, err := c.GetPayStatus(ctx, token); err == nil && p != nil {
 		resp.PayStatus = *p
 	}
-	// Entitlements
-	if e, err := c.GetEntitlements(ctx, token); err == nil && e != nil {
-		resp.Entitlements = e
+	// Entitlements & UsageSummary
+	if entRes, err := c.GetEntitlements(ctx, token); err == nil && entRes != nil {
+		resp.Entitlements = entRes.Packs
+		resp.UsageSummary = entRes.Summary
 	}
 	// Checkin & Credits
 	if ch, err := c.GetCheckinStatus(ctx, token, deviceID); err == nil && ch != nil {
 		resp.Checkin = *ch
+	}
+
+	// Calculate Spendable Credits
+	if resp.UsageSummary.TotalAmount > 0 {
+		resp.SpendableCredits = resp.UsageSummary.RemainingAmount
+	} else if len(resp.Entitlements) > 0 {
+		var sum float64
+		for _, pack := range resp.Entitlements {
+			if pack.TotalQuota > pack.UsedQuota {
+				sum += (pack.TotalQuota - pack.UsedQuota)
+			}
+		}
+		resp.SpendableCredits = sum
+	} else {
+		resp.SpendableCredits = resp.Checkin.Credits + resp.Checkin.ExtraCredits
 	}
 
 	return resp, nil

@@ -25,53 +25,54 @@ func TestClient_MockAPIs(t *testing.T) {
 		case PathPayStatusV2:
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"code": 0,
-				"data": map[string]interface{}{
-					"user_pay_identity_str": "Pro",
-					"is_pay_freshman":      false,
-					"detail": map[string]interface{}{
-						"subscription_renew_time": 1750000000,
-					},
+				"user_pay_identity_str": "Pro",
+				"is_pay_freshman":      false,
+				"detail": map[string]interface{}{
+					"subscription_renew_time": 1750000000,
 				},
 			})
 		case PathEntUsageV2:
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"code": 0,
-				"data": map[string]interface{}{
-					"user_entitlement_pack_list": []map[string]interface{}{
-						{
-							"entitlement_pack_id":   "pack_1",
-							"entitlement_pack_name": "Pro 月度权益包",
-							"entitlement_base_info": map[string]interface{}{
-								"product_type": 1,
-								"quota": map[string]interface{}{
-									"total_quota": 500,
-									"unit":        "次",
-								},
+				"usage_summary": map[string]interface{}{
+					"total_amount":      5400.0,
+					"consumed_amount":   1576.0,
+					"consumption_ratio": 0.29,
+				},
+				"user_entitlement_pack_list": []map[string]interface{}{
+					{
+						"entitlement_pack_id": "pack_1",
+						"display_desc":        "每月登录赠送",
+						"group_name":          "每月登录积分",
+						"entitlement_base_info": map[string]interface{}{
+							"product_type": 2,
+							"quota": map[string]interface{}{
+								"credits_limit": 500.0,
+								"unit":          "积分",
 							},
-							"usage": map[string]interface{}{
-								"credits_amount": 42,
-							},
+						},
+						"usage": map[string]interface{}{
+							"credits_amount": 24.98,
 						},
 					},
 				},
 			})
 		case PathCheckinStatus:
+			// Flat root structure
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"code": 0,
-				"data": map[string]interface{}{
-					"checked_in": false,
-					"enable":     true,
-					"credits":    1280,
-				},
+				"code":          0,
+				"checked_in":    true,
+				"enable":        true,
+				"credits":       150.0,
+				"extra_credits": 50.0,
+				"message":       "success",
 			})
 		case PathCheckinClaim:
 			json.NewEncoder(w).Encode(map[string]interface{}{
-				"code":    0,
-				"message": "success",
-				"data": map[string]interface{}{
-					"credits_earned": 20,
-					"credits":        1300,
-				},
+				"code":           0,
+				"message":        "success",
+				"credits_earned": 20.0,
+				"credits":        1300.0,
 			})
 		case PathUsageGroupBySession:
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -119,12 +120,12 @@ func TestClient_MockAPIs(t *testing.T) {
 	}
 
 	// 3. Entitlements
-	packs, err := client.GetEntitlements(ctx, "mock_token")
+	entRes, err := client.GetEntitlements(ctx, "mock_token")
 	if err != nil {
 		t.Fatalf("GetEntitlements failed: %v", err)
 	}
-	if len(packs) != 1 || packs[0].TotalQuota != 500 || packs[0].UsedQuota != 42 {
-		t.Errorf("Unexpected packs: %+v", packs)
+	if entRes.Summary.TotalAmount != 5400 || len(entRes.Packs) != 1 || entRes.Packs[0].TotalQuota != 500 {
+		t.Errorf("Unexpected entRes: %+v", entRes)
 	}
 
 	// 4. CheckinStatus
@@ -132,7 +133,7 @@ func TestClient_MockAPIs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCheckinStatus failed: %v", err)
 	}
-	if checkin.CheckedIn || !checkin.CanCheckin || checkin.Credits != 1280 {
+	if !checkin.CheckedIn || checkin.Credits != 150 || checkin.ExtraCredits != 50 {
 		t.Errorf("Unexpected checkin: %+v", checkin)
 	}
 
@@ -159,7 +160,7 @@ func TestClient_MockAPIs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetFullProfile failed: %v", err)
 	}
-	if profile.UserInfo.Nickname != "TraeDeveloper" || profile.Checkin.Credits != 1280 {
+	if profile.UserInfo.Nickname != "TraeDeveloper" || profile.SpendableCredits != (5400-1576) {
 		t.Errorf("Unexpected full profile: %+v", profile)
 	}
 }

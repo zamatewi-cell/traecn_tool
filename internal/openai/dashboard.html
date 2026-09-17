@@ -438,7 +438,7 @@
         if (!res.ok) return;
         const profile = await res.json();
 
-        // 账号与积分
+        // 账号与真实积分
         const nickname = profile.user_info?.nickname || 'Trae 用户';
         document.getElementById('user-nickname').textContent = nickname;
         document.getElementById('user-avatar-initial').textContent = nickname.charAt(0).toUpperCase();
@@ -447,20 +447,41 @@
         document.getElementById('user-plan-tag').textContent = plan;
         document.getElementById('card-plan-str').textContent = plan;
 
-        const credits = profile.checkin?.credits ?? 0;
-        document.getElementById('user-credits-val').textContent = credits;
-        document.getElementById('card-credits-val').textContent = credits.toLocaleString() + ' 积分';
+        // 优先使用真实可用总积分 (SpendableCredits)
+        const spendable = profile.spendable_credits !== undefined && profile.spendable_credits !== null 
+          ? Math.round(profile.spendable_credits) 
+          : (profile.checkin?.credits || 0);
+        document.getElementById('user-credits-val').textContent = spendable.toLocaleString();
+        document.getElementById('card-credits-val').textContent = spendable.toLocaleString() + ' 积分';
 
-        // 权益包
+        // 权益包与总积分池进度条
+        const summary = profile.usage_summary;
         const packs = profile.entitlements || [];
-        if (packs.length > 0) {
+        
+        if (summary && summary.total_amount > 0) {
+          const used = Math.round(summary.consumed_amount);
+          const total = Math.round(summary.total_amount);
+          const pct = Math.min(100, Math.round((summary.consumed_amount / summary.total_amount) * 100));
+          document.getElementById('pack-name-display').textContent = '官方积分池用量';
+          document.getElementById('pack-usage-display').textContent = used.toLocaleString() + ' / ' + total.toLocaleString() + ' (' + pct + '%)';
+          
+          const bar = document.getElementById('pack-progress-bar');
+          bar.style.width = pct + '%';
+          if (pct >= 90) {
+            bar.className = 'bg-gradient-to-r from-rose-500 to-pink-500 h-2 rounded-full transition-all duration-500';
+          } else if (pct >= 70) {
+            bar.className = 'bg-gradient-to-r from-amber-500 to-yellow-400 h-2 rounded-full transition-all duration-500';
+          } else {
+            bar.className = 'bg-gradient-to-r from-emerald-500 to-teal-400 h-2 rounded-full transition-all duration-500';
+          }
+        } else if (packs.length > 0) {
           const mainPack = packs[0];
           document.getElementById('pack-name-display').textContent = mainPack.pack_name;
-          document.getElementById('pack-usage-display').textContent = mainPack.used_quota + ' / ' + mainPack.total_quota + ' ' + (mainPack.unit || '次');
+          document.getElementById('pack-usage-display').textContent = Math.round(mainPack.used_quota) + ' / ' + Math.round(mainPack.total_quota) + ' ' + (mainPack.unit || '积分');
           const pct = mainPack.total_quota > 0 ? Math.min(100, Math.round((mainPack.used_quota / mainPack.total_quota) * 100)) : 0;
           document.getElementById('pack-progress-bar').style.width = pct + '%';
         } else {
-          document.getElementById('pack-name-display').textContent = '基础用量包';
+          document.getElementById('pack-name-display').textContent = '基础用量';
           document.getElementById('pack-usage-display').textContent = '按需计费';
           document.getElementById('pack-progress-bar').style.width = '100%';
         }
