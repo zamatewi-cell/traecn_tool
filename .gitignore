@@ -38,7 +38,6 @@ scripts/temp_*.json
 
 # Go
 vendor/
-go.sum
 
 # OS
 .DS_Store

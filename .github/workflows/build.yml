@@ -94,9 +94,12 @@ jobs:
         id: version
         run: |
           if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            echo "VAL=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            RAW_VER="${GITHUB_REF#refs/tags/v}"
+            echo "VAL=${RAW_VER}" >> $GITHUB_OUTPUT
+            echo "PKG_TAG=v${RAW_VER}" >> $GITHUB_OUTPUT
           else
-            echo "VAL=v1.0.0-dev.${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+            echo "VAL=1.0.0-dev.${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+            echo "PKG_TAG=v1.0.0-dev.${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
           fi
 
       - name: Build Binary
@@ -122,8 +125,8 @@ jobs:
       - name: Package Archive
         id: package
         run: |
-          VERSION="${{ steps.version.outputs.VAL }}"
-          PKG_NAME="trae-proxy_${VERSION}_${{ matrix.os }}_${{ matrix.arch }}"
+          PKG_TAG="${{ steps.version.outputs.PKG_TAG }}"
+          PKG_NAME="trae-proxy_${PKG_TAG}_${{ matrix.os }}_${{ matrix.arch }}"
           
           mkdir -p dist
           if [ "${{ matrix.archive }}" = "zip" ]; then
@@ -175,7 +178,7 @@ jobs:
           GOOS: windows
           GOARCH: amd64
         run: |
-          go build -trimpath -ldflags="-s -w" -o trae-proxy.exe ./cmd/trae-proxy
+          go build -trimpath -ldflags="-s -w -X 'github.com/zamatewi-cell/traecn_tool/internal/version.Version=1.0.0'" -o trae-proxy.exe ./cmd/trae-proxy
           Get-Item trae-proxy.exe
 
       - name: Install Frontend Dependencies

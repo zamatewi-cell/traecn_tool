@@ -4,7 +4,7 @@ const fs = require('fs');
 const http = require('http');
 const crypto = require('crypto');
 const os = require('os');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 
 let mainWindow = null;
 let proxyProcess = null;
@@ -502,13 +502,7 @@ function startProxyService(config) {
 
 function stopProxyService() {
   if (proxyProcess) {
-    proxyProcess.kill();
-    proxyProcess = null;
-    if (fs.existsSync(PROXY_CONFIG_FILE)) {
-      try {
-        fs.unlinkSync(PROXY_CONFIG_FILE);
-      } catch (e) {}
-    }
+    killProxyProcess();
     return { success: true };
   }
   return { success: false, error: '服务未运行' };
@@ -674,18 +668,33 @@ app.whenReady().then(() => {
 });
 
 function killProxyProcess() {
-  if (proxyProcess && !proxyProcess.killed) {
+  if (proxyProcess && proxyProcess.pid) {
+    const pid = proxyProcess.pid;
     try {
-      proxyProcess.kill('SIGTERM');
-      setTimeout(() => {
-        if (proxyProcess && !proxyProcess.killed) {
+      if (process.platform === 'win32') {
+        // Windows 环境下利用 taskkill /PID ... /T /F 强杀整棵子进程树，彻底杜绝孤儿进程残留
+        execSync(`taskkill /pid ${pid} /T /F`, { stdio: 'ignore' });
+      } else {
+        proxyProcess.kill('SIGTERM');
+        setTimeout(() => {
           try {
-            proxyProcess.kill('SIGKILL');
+            if (proxyProcess && !proxyProcess.killed) {
+              proxyProcess.kill('SIGKILL');
+            }
           } catch (e) {}
-        }
-      }, 1000);
-    } catch (e) {}
+        }, 800);
+      }
+    } catch (e) {
+      try {
+        proxyProcess.kill('SIGKILL');
+      } catch (err) {}
+    }
     proxyProcess = null;
+    if (fs.existsSync(PROXY_CONFIG_FILE)) {
+      try {
+        fs.unlinkSync(PROXY_CONFIG_FILE);
+      } catch (e) {}
+    }
   }
 }
 

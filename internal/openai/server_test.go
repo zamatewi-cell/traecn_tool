@@ -13,6 +13,7 @@ import (
 	"github.com/zamatewi-cell/traecn_tool/internal/auth"
 	"github.com/zamatewi-cell/traecn_tool/internal/models"
 	"github.com/zamatewi-cell/traecn_tool/internal/proxy"
+	"github.com/zamatewi-cell/traecn_tool/internal/version"
 )
 
 // Helper function to create test logger
@@ -505,5 +506,37 @@ func TestDashboard_HTML_StaticIntegrityAndXSSProtection(t *testing.T) {
 		t.Errorf("unexpected escaped payload result: %s", escaped)
 	}
 }
+
+func TestServer_VersionNormalization(t *testing.T) {
+	origVer := version.Version
+	defer func() { version.Version = origVer }()
+
+	// 模拟外部 ldflags 注入了带 "v" 前缀的版本号
+	version.Version = "v1.0.0"
+
+	tokens := auth.NewTokenProvider()
+	logger := newTestLogger()
+	p := proxy.NewTraeProxy(tokens, logger)
+	s := NewServer(p, logger, nil)
+
+	req := httptest.NewRequest("GET", "/health", nil)
+	w := httptest.NewRecorder()
+
+	s.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d", w.Code)
+	}
+
+	var resp map[string]string
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to parse /health json: %v", err)
+	}
+
+	if resp["version"] != "1.0.0" {
+		t.Errorf("expected normalized version '1.0.0', got '%s'", resp["version"])
+	}
+}
+
 
 

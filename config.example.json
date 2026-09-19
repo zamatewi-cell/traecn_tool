@@ -1,5 +1,9 @@
 {
   "listen_addr": ":9090",
+  "allow_lan": false,
+  "api_keys": [
+    "sk-example-api-key"
+  ],
   "log_level": "info",
   "accounts": [
     {

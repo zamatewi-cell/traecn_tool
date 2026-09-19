@@ -201,7 +201,8 @@ func (s *Server) handleTraeBillingHistory(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": version.Version})
+	ver := strings.TrimPrefix(version.Version, "v")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": ver})
 }
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -223,9 +224,10 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ver := strings.TrimPrefix(version.Version, "v")
 	writeJSON(w, http.StatusOK, map[string]string{
 		"name":      "trae-proxy",
-		"version":   version.Version,
+		"version":   ver,
 		"dashboard": "/dashboard",
 		"docs":      "https://github.com/zamatewi-cell/traecn_tool",
 	})

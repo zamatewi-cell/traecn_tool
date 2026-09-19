@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Settings as SettingsIcon, Globe, Moon, Bell, Power,
-  Database, Download, Trash2, Shield, Zap, HardDrive, AlertTriangle, ExternalLink,
+  Settings as SettingsIcon, Globe, Moon,
+  Database, Download, Trash2, Shield, HardDrive, AlertTriangle, ExternalLink,
 } from 'lucide-react';
 import { useAppStore } from '../store';
 
@@ -10,10 +10,6 @@ export default function SettingsPage() {
 
   const [language, setLanguage] = useState(() => localStorage.getItem('traecn_lang') || 'zh');
   const [theme, setTheme] = useState(() => localStorage.getItem('traecn_theme') || 'dark');
-  const [autoStart, setAutoStart] = useState(() => localStorage.getItem('traecn_autostart') === 'true');
-  const [minimizeToTray, setMinimizeToTray] = useState(() => localStorage.getItem('traecn_tray') !== 'false');
-  const [showNotifications, setShowNotifications] = useState(() => localStorage.getItem('traecn_notify') !== 'false');
-  const [logRetention, setLogRetention] = useState(() => localStorage.getItem('traecn_log_retention') || '7');
   const [dataDir, setDataDir] = useState('');
 
   useEffect(() => {
@@ -21,26 +17,6 @@ export default function SettingsPage() {
       if (dir) setDataDir(dir);
     }).catch(() => {});
   }, []);
-
-  const handleToggleAutoStart = (val: boolean) => {
-    setAutoStart(val);
-    localStorage.setItem('traecn_autostart', String(val));
-  };
-
-  const handleToggleMinimizeToTray = (val: boolean) => {
-    setMinimizeToTray(val);
-    localStorage.setItem('traecn_tray', String(val));
-  };
-
-  const handleToggleNotifications = (val: boolean) => {
-    setShowNotifications(val);
-    localStorage.setItem('traecn_notify', String(val));
-  };
-
-  const handleLogRetentionChange = (val: string) => {
-    setLogRetention(val);
-    localStorage.setItem('traecn_log_retention', val);
-  };
 
   const handleOpenDataDir = async () => {
     try {
@@ -195,97 +171,6 @@ export default function SettingsPage() {
                 浅色主题 (待开放)
               </button>
             </div>
-          </div>
-        </div>
-
-        {/* System Settings (ST4: 联动 localStorage) */}
-        <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-5 space-y-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Power size={16} className="text-purple-400" />
-            <h2 className="text-sm font-semibold text-dark-200">系统与守护</h2>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-dark-200">开机自启动</div>
-              <div className="text-xs text-dark-500">系统登录时自动驻留后台运行</div>
-            </div>
-            <button
-              onClick={() => handleToggleAutoStart(!autoStart)}
-              className={`relative w-12 h-6 rounded-full transition-colors ${
-                autoStart ? 'bg-green-500' : 'bg-dark-600'
-              }`}
-            >
-              <div
-                className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                  autoStart ? 'left-7' : 'left-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-dark-200">关闭时最小化到系统托盘</div>
-              <div className="text-xs text-dark-500">避免误触关闭窗口中断代理转发服务</div>
-            </div>
-            <button
-              onClick={() => handleToggleMinimizeToTray(!minimizeToTray)}
-              className={`relative w-12 h-6 rounded-full transition-colors ${
-                minimizeToTray ? 'bg-green-500' : 'bg-dark-600'
-              }`}
-            >
-              <div
-                className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                  minimizeToTray ? 'left-7' : 'left-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-dark-200">服务状态桌面通知</div>
-              <div className="text-xs text-dark-500">在代理启动/停止及会话异常时弹出通知</div>
-            </div>
-            <button
-              onClick={() => handleToggleNotifications(!showNotifications)}
-              className={`relative w-12 h-6 rounded-full transition-colors ${
-                showNotifications ? 'bg-green-500' : 'bg-dark-600'
-              }`}
-            >
-              <div
-                className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                  showNotifications ? 'left-7' : 'left-1'
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-
-        {/* Proxy Settings (ST3/ST5: 清理假 IP 按钮，联动日志滚动) */}
-        <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-5 space-y-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Zap size={16} className="text-yellow-400" />
-            <h2 className="text-sm font-semibold text-dark-200">日志与运维策略</h2>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-dark-200">控制台日志保留策略</div>
-              <div className="text-xs text-dark-500">内存中最多保留 500 行流式日志，自动滚动清理</div>
-            </div>
-            <select
-              value={logRetention}
-              onChange={(e) => handleLogRetentionChange(e.target.value)}
-              className="px-3 py-1.5 bg-dark-900 border border-dark-600 rounded-lg text-sm text-dark-200 focus:outline-none focus:border-blue-500"
-            >
-              <option value="1">按 1 天滚动</option>
-              <option value="3">按 3 天滚动</option>
-              <option value="7">按 7 天滚动 (推荐)</option>
-              <option value="14">按 14 天滚动</option>
-              <option value="30">按 30 天滚动</option>
-            </select>
           </div>
         </div>
 

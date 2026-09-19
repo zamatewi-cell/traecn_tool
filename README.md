@@ -114,32 +114,17 @@ chmod +x ./trae-proxy
 
 ---
 
-### 方式二：Windows 桌面客户端安装 (GUI)
+### 方式二：Windows 桌面客户端运行 (GUI)
 
 对于 Windows 桌面用户，可直接使用打包好的桌面客户端：
-- **安装向导版**：下载 `TraeCN.Tools_1.0.0_x64-setup.exe`，双击根据向导安装，生成桌面快捷方式与开机启动项；
+- **安装向导版**：下载 `TraeCN.Tools_1.0.0_x64-setup.exe`，双击根据向导安装，生成桌面快捷方式；
 - **便携免安装版**：下载 `TraeCN.Tools_1.0.0_x64-portable.exe`，免安装即开即用，适合放入 U 盘或快速体验。
 
-桌面端启动后会自动在后台托管并拉起核心代理，系统托盘支持一键启停和打开仪表盘。
+桌面端启动后会自动托管并管理核心代理进程，提供直观的可视化监控、多账号管理与一键启停。
 
 ---
 
-### 方式三：Docker 容器化运行
-
-利用轻量化容器快速启动无头网关（将宿主机 Trae 凭据挂载进容器）：
-
-```bash
-docker run -d \
-  --name trae-proxy \
-  -p 9090:9090 \
-  -v ~/.config/Trae:/root/.config/Trae:ro \
-  -e TRAE_PROXY_LISTEN=":9090" \
-  ghcr.io/zamatewi-cell/trae-proxy:v1.0.0
-```
-
----
-
-### 方式四：从源码编译构建
+### 方式三：从源码编译构建
 
 开发机需具备 **Go 1.25+** 与 **Node.js 20+**：
 
@@ -333,8 +318,11 @@ aider --model openai/DeepSeek-V4.1-Flash
 ```json
 {
   "listen_addr": "127.0.0.1:9090",
+  "allow_lan": false,
+  "api_keys": [
+    "sk-your-secure-key"
+  ],
   "log_level": "info",
-  "api_key": "",
   "accounts": [
     { "name": "local_trae", "storage_path": "" },
     { "name": "backup_token", "token": "eyJhbGci..." }
@@ -354,8 +342,8 @@ aider --model openai/DeepSeek-V4.1-Flash
 | 参数 | 默认值 | 作用说明 |
 |---|---|---|
 | `-listen` | `127.0.0.1:9090` | 指定服务监听 IP 与端口 |
-| `-api-key` | `""` | 设置全局访问鉴权密钥 |
-| `-allow-lan` | `false` | 允许局域网访问（启用时强制要求配置 `-api-key`） |
+| `-api-key` | `""` | 设置访问鉴权密钥（支持逗号分隔多个，如 `-api-key sk-k1,sk-k2`） |
+| `-allow-lan` | `false` | 允许局域网访问（启用时强制要求配置 `-api-key` 或 `api_keys`） |
 | `-log-level` | `info` | 日志级别（`debug` / `info` / `warn` / `error`） |
 | `-config` | `config.json` | 自定义配置文件路径 |
 | `-version` | | 打印当前软件构建版本并退出 |

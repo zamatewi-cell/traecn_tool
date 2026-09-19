@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../store';
 import { TRAE_MODELS, PROVIDER_COLORS } from '../types';
-import type { ModelMapping } from '../types';
 import {
-  Power, PowerOff, Lock, Eye, EyeOff, RefreshCw,
-  Copy, Edit2, Plus, Trash2, ChevronDown, ChevronRight,
+  Power, PowerOff, Eye, EyeOff, RefreshCw,
+  Copy, ChevronDown, ChevronRight,
   ExternalLink, Check, Server, CheckCircle, XCircle,
 } from 'lucide-react';
 import { apiClient } from '../api/client';
@@ -14,20 +13,14 @@ export default function ApiProxy() {
   const {
     proxyConfig, updateProxyConfig,
     proxyRunning, startProxy, stopProxy,
-    modelMappings, addModelMapping, removeModelMapping,
     backendHealth, checkBackendHealth,
   } = useAppStore();
 
   const [showApiKey, setShowApiKey] = useState(false);
-  const [showWebPassword, setShowWebPassword] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    router: true,
     models: false,
     protocol: true,
   });
-  const [newMappingSource, setNewMappingSource] = useState('');
-  const [newMappingTarget, setNewMappingTarget] = useState('');
-  const [taskModel, setTaskModel] = useState('doubao-seed-1.6');
   const [copied, setCopied] = useState<string | null>(null);
   const [backendModels, setBackendModels] = useState<ModelInfo[]>([]);
 
@@ -65,17 +58,6 @@ export default function ApiProxy() {
     navigator.clipboard.writeText(text);
     setCopied(key);
     setTimeout(() => setCopied(null), 1500);
-  };
-
-  const handleAddMapping = () => {
-    if (!newMappingSource || !newMappingTarget) return;
-    addModelMapping({
-      id: crypto.randomUUID(),
-      sourceName: newMappingSource,
-      targetModel: newMappingTarget,
-    });
-    setNewMappingSource('');
-    setNewMappingTarget('');
   };
 
   const toggleSection = (key: string) => {
@@ -180,23 +162,9 @@ export default function ApiProxy() {
                 />
               </div>
             </div>
-            <div>
-              <label className="text-xs text-dark-400 mb-1 block">
-                模式 <HelpTip text="选择授权验证方式" />
-              </label>
-              <select
-                value={proxyConfig.authMode}
-                onChange={(e) => updateProxyConfig({ authMode: e.target.value as 'auto' | 'bearer' | 'none' })}
-                className="w-full px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-sm text-dark-200 focus:outline-none focus:border-blue-500"
-              >
-                <option value="auto">自动（推荐）</option>
-                <option value="bearer">Bearer Token</option>
-                <option value="none">无授权</option>
-              </select>
-              <p className="text-xs text-dark-500 mt-1">
-                开启后客户端需通过 Authorization: Bearer ... 传入 API 密钥。
-              </p>
-            </div>
+            <p className="text-xs text-dark-500 mt-1">
+              开启后，客户端请求需在 Header 中携带 Authorization: Bearer &lt;API密钥&gt;。若允许局域网访问，系统强制要求开启授权。
+            </p>
           </div>
         </div>
 
@@ -239,125 +207,10 @@ export default function ApiProxy() {
           <p className="text-xs text-orange-400 mt-1">注意：请妥善保管您的 API 密钥，不要泄露给他人。</p>
         </div>
 
-        {/* Web UI Password */}
-        <div>
-          <label className="block text-sm font-medium text-dark-200 mb-1.5">
-            Web UI 管理后台密码 <HelpTip text="用于管理后台的登录密码" />
-          </label>
-          <div className="flex items-center gap-2">
-            <input
-              type={showWebPassword ? 'text' : 'password'}
-              value={proxyConfig.webUiPassword || ''}
-              onChange={(e) => updateProxyConfig({ webUiPassword: e.target.value })}
-              placeholder="〈同 API 密钥〉"
-              className="flex-1 px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-sm text-dark-200 font-mono placeholder:text-dark-500 focus:outline-none focus:border-blue-500"
-            />
-            <button
-              onClick={() => setShowWebPassword(!showWebPassword)}
-              className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg transition-colors"
-              title="显示/隐藏密码"
-            >
-              {showWebPassword ? <EyeOff size={16} className="text-dark-400" /> : <Eye size={16} className="text-dark-400" />}
-            </button>
-          </div>
-          <p className="text-xs text-dark-500 mt-1">留空则自动使用上述 API 密钥作为 Web 控制台登录凭证。</p>
-        </div>
+
       </div>
 
-      {/* Model Router */}
-      <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl overflow-hidden">
-        <button
-          onClick={() => toggleSection('router')}
-          className="flex items-center justify-between w-full px-5 py-4 hover:bg-dark-800/30 transition-colors"
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-base font-medium">模型路由中心 (Model Router)</span>
-          </div>
-          {expandedSections.router ? <ChevronDown size={18} className="text-dark-400" /> : <ChevronRight size={18} className="text-dark-400" />}
-        </button>
 
-        {expandedSections.router && (
-          <div className="px-5 pb-5 space-y-4">
-            <p className="text-xs text-dark-400">通过精确或前缀别名自定义映射模型路由规则</p>
-
-            {/* Background task model (P5: 联动状态) */}
-            <div className="flex items-center justify-between bg-dark-900/50 rounded-lg p-3">
-              <div>
-                <span className="text-sm text-dark-200">后台默认参考模型</span>
-                <p className="text-xs text-dark-500 mt-0.5">用于标题生成与后台自动化任务</p>
-              </div>
-              <select
-                value={taskModel}
-                onChange={(e) => setTaskModel(e.target.value)}
-                className="px-3 py-1.5 bg-dark-800 border border-dark-600 rounded-lg text-xs text-dark-300 focus:outline-none"
-              >
-                {TRAE_MODELS.map(m => (
-                  <option key={m.configName} value={m.configName}>{m.displayName}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Custom Mappings */}
-            <div>
-              <h4 className="text-sm font-medium text-dark-200 mb-2">自定义映射列表</h4>
-              <p className="text-xs text-dark-500 mb-3">
-                支持手动输入任意模型别名映射（如映射 gpt-4 到 deepseek-r1）。
-              </p>
-
-              {/* Current mappings */}
-              <div className="bg-dark-900/50 rounded-lg p-3 mb-3 min-h-[60px]">
-                <div className="text-xs text-dark-500 uppercase mb-2">已配置映射</div>
-                {modelMappings.length === 0 ? (
-                  <p className="text-xs text-dark-500 text-center py-4">暂无自定义精确映射</p>
-                ) : (
-                  <div className="space-y-2">
-                    {modelMappings.map(m => (
-                      <div key={m.id} className="flex items-center justify-between bg-dark-800 rounded px-3 py-2">
-                        <span className="text-sm text-dark-300 font-mono">{m.sourceName} → {m.targetModel}</span>
-                        <button
-                          onClick={() => removeModelMapping(m.id)}
-                          className="text-dark-500 hover:text-red-400 transition-colors p-1"
-                          title="删除映射"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Add mapping */}
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-dark-400 shrink-0">添加映射:</span>
-                <input
-                  value={newMappingSource}
-                  onChange={(e) => setNewMappingSource(e.target.value)}
-                  placeholder="原始名 (如 gpt-4)"
-                  className="flex-1 px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-200 placeholder:text-dark-500 focus:outline-none focus:border-blue-500"
-                />
-                <select
-                  value={newMappingTarget}
-                  onChange={(e) => setNewMappingTarget(e.target.value)}
-                  className="px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-200 w-48 focus:outline-none"
-                >
-                  <option value="">选择目标模型</option>
-                  {TRAE_MODELS.map(m => (
-                    <option key={m.configName} value={m.configName}>{m.displayName}</option>
-                  ))}
-                </select>
-                <button
-                  onClick={handleAddMapping}
-                  disabled={!newMappingSource || !newMappingTarget}
-                  className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs transition-colors text-white disabled:opacity-50"
-                >
-                  <Plus size={14} /> 添加
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
 
       {/* Multi-Protocol Support */}
       <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl overflow-hidden">

@@ -95,11 +95,13 @@ func main() {
 	allowLan := flag.Bool("allow-lan", false, "allow access from local area network (bind to 0.0.0.0)")
 	insecureNoAuth := flag.Bool("insecure-no-auth", false, "allow LAN exposure without API Key authentication (INSECURE)")
 	logLevel := flag.String("log-level", "info", "log level (debug/info/warn/error)")
+	apiKey := flag.String("api-key", "", "API key for authentication (optional, comma-separated for multiple keys)")
 	showVersion := flag.Bool("version", false, "show version")
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("trae-proxy v%s\n", version.Version)
+		ver := strings.TrimPrefix(version.Version, "v")
+		fmt.Printf("trae-proxy v%s\n", ver)
 		os.Exit(0)
 	}
 
@@ -156,6 +158,16 @@ func main() {
 	// Apply CLI listen flag override if provided
 	if *listen != "" {
 		cfg.ListenAddr = *listen
+	}
+
+	// Apply CLI apiKey flag override if provided
+	if *apiKey != "" {
+		for _, k := range strings.Split(*apiKey, ",") {
+			k = strings.TrimSpace(k)
+			if k != "" {
+				cfg.APIKeys = append(cfg.APIKeys, k)
+			}
+		}
 	}
 
 	// Enforce IP-level loopback security convergence
@@ -249,7 +261,7 @@ func main() {
 	go traeProxy.RefreshModelRegistry()
 
 	logger.Info("====================================")
-	logger.Info("  trae-proxy v" + version.Version)
+	logger.Info("  trae-proxy v" + strings.TrimPrefix(version.Version, "v"))
 	logger.Info("  Trae CN -> OpenAI Compatible API")
 	logger.Info("====================================")
 
