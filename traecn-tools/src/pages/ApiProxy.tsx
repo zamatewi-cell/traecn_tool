@@ -122,17 +122,6 @@ export default function ApiProxy() {
           </div>
         </div>
 
-        {/* Auto Start */}
-        <div className="flex items-center gap-8">
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-dark-300">跟随应用自动启动</span>
-            <ToggleSwitch
-              active={proxyConfig.autoStart}
-              onChange={(v) => updateProxyConfig({ autoStart: v })}
-            />
-          </div>
-        </div>
-
         <div className="grid grid-cols-2 gap-5">
           {/* Allow LAN */}
           <div>
@@ -251,16 +240,22 @@ export default function ApiProxy() {
                 </div>
               </div>
 
-              {/* Anthropic (P6: 明确标为规划中，去除假复制图标) */}
-              <div className="bg-dark-900/50 border border-dark-700/50 rounded-xl p-4 opacity-60">
+              {/* Anthropic */}
+              <div className="bg-dark-900/50 border-2 border-purple-500/30 rounded-xl p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-dark-300">Anthropic 协议</span>
-                  <span className="text-[10px] text-dark-400 px-1.5 py-0.5 bg-dark-800 rounded">Roadmap</span>
+                  <span className="text-sm font-medium text-purple-400">Anthropic 协议</span>
+                  <button
+                    onClick={() => handleCopy(baseUrl, 'anthropic-base')}
+                    className="flex items-center gap-1 text-xs text-dark-400 hover:text-dark-200 transition-colors"
+                  >
+                    {copied === 'anthropic-base' ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+                    复制 BASE
+                  </button>
                 </div>
-                <div className="space-y-1 text-xs text-dark-500 font-mono">
+                <div className="space-y-1 text-xs text-dark-300 font-mono">
                   <div>/v1/messages</div>
                 </div>
-                <div className="text-xs text-dark-400 mt-2">待后续版本开放</div>
+                <div className="text-xs text-purple-400/80 mt-2">支持 Claude Code / Continue</div>
               </div>
 
               {/* Gemini (P6: 明确标为规划中，去除假复制图标) */}

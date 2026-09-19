@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Settings as SettingsIcon, Globe, Moon,
+  Settings as SettingsIcon,
   Database, Download, Trash2, Shield, HardDrive, AlertTriangle, ExternalLink,
 } from 'lucide-react';
 import { useAppStore } from '../store';
@@ -8,8 +8,6 @@ import { useAppStore } from '../store';
 export default function SettingsPage() {
   const { accounts, proxyConfig } = useAppStore();
 
-  const [language, setLanguage] = useState(() => localStorage.getItem('traecn_lang') || 'zh');
-  const [theme, setTheme] = useState(() => localStorage.getItem('traecn_theme') || 'dark');
   const [dataDir, setDataDir] = useState('');
 
   useEffect(() => {
@@ -126,53 +124,6 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-6">
-        {/* General Settings */}
-        <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-5 space-y-4">
-          <div className="flex items-center gap-2 mb-2">
-            <Globe size={16} className="text-blue-400" />
-            <h2 className="text-sm font-semibold text-dark-200">通用偏好</h2>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-dark-200">界面语言</div>
-              <div className="text-xs text-dark-500">当前客户端显示的系统语言</div>
-            </div>
-            <select
-              value={language}
-              onChange={(e) => {
-                setLanguage(e.target.value);
-                localStorage.setItem('traecn_lang', e.target.value);
-              }}
-              className="px-3 py-1.5 bg-dark-900 border border-dark-600 rounded-lg text-sm text-dark-200 focus:outline-none focus:border-blue-500"
-            >
-              <option value="zh">简体中文 (Chinese)</option>
-              <option value="en">English</option>
-            </select>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-dark-200">外观主题</div>
-              <div className="text-xs text-dark-500">当前已适配专业极夜深色主题</div>
-            </div>
-            <div className="flex gap-2">
-              <button
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"
-              >
-                <Moon size={13} />
-                极夜深色
-              </button>
-              <button
-                disabled
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-dark-700 text-dark-500 rounded-lg text-xs cursor-not-allowed opacity-50"
-                title="规划支持中"
-              >
-                浅色主题 (待开放)
-              </button>
-            </div>
-          </div>
-        </div>
 
         {/* Data Management (ST1/ST2: 真实导出与真实清除) */}
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-5 space-y-4">
