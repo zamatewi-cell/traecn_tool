@@ -1,83 +1,89 @@
-# Trae CN Proxy API ÎÄµµ
+# Trae CN Proxy API å‚è€ƒæ–‡æ¡£
 
-**°æ±¾**: 0.1.0  
-**×îºó¸üĞÂ**: 2026-03-15  
-**Î¬»¤Õß**: API-Agent  
-
----
-
-## ? ¸ÅÊö
-
-Trae CN Proxy Ìá¹© OpenAI ¼æÈİµÄ API ½Ó¿Ú£¬ÔÊĞíÊ¹ÓÃ±ê×¼ OpenAI SDK ·ÃÎÊ Trae CN ·şÎñ¡£
-
-### »ù´¡ĞÅÏ¢
-
-- **Base URL**: `http://localhost:8080`
-- **ÈÏÖ¤·½Ê½**: Bearer Token (API Key)
-- **Êı¾İ¸ñÊ½**: JSON
-- **Á÷Ê½´«Êä**: Server-Sent Events (SSE)
-
-### Ö§³ÖµÄÄ£ĞÍ
-
-| Ä£ĞÍÃû³Æ | Trae CN ID | ÃèÊö |
-|---------|-----------|------|
-| `deepseek-v3.1-terminus` | `ds_v31` | DeepSeek V3.1 ×îĞÂ°æ |
-| `deepseek-v3` | `ds_v3` | DeepSeek V3 |
-| `deepseek-r1` | `ds_r1` | DeepSeek R1 |
+**ç‰ˆæœ¬**: 1.0.0  
+**æœ€åæ›´æ–°**: 2026-09-19  
+**ç»´æŠ¤çŠ¶æ€**: ç”Ÿäº§å°±ç»ª (Production Ready)  
 
 ---
 
-## ? ÈÏÖ¤
+## æ¦‚è¿°
 
-ËùÓĞ API ÇëÇóĞèÒªÔÚ `Authorization` Í·ÖĞÌá¹© API Key£º
+Trae CN Proxy æä¾›æ ‡å‡† OpenAI / Anthropic / Codex å…¼å®¹çš„ HTTP API æ¥å£ï¼Œå…è®¸ä½¿ç”¨æ ‡å‡† OpenAI SDKã€å„ç±» AI å®¢æˆ·ç«¯ï¼ˆCursorã€Continueã€Claude Codeã€Aider ç­‰ï¼‰æ— ç¼è®¿é—® Trae CN æœåŠ¡ã€‚
+
+### åŸºç¡€ä¿¡æ¯
+
+- **Base URL**: `http://localhost:9090` (OpenAI åè®®è·¯ç”±ä¸º `http://localhost:9090/v1`)
+- **è®¤è¯æ–¹å¼**: Bearer Token (`Authorization: Bearer <API_KEY>`)
+- **æ•°æ®æ ¼å¼**: JSON
+- **æµå¼ä¼ è¾“**: Server-Sent Events (SSE)
+- **Web æ§åˆ¶å°**: `http://localhost:9090/` æˆ– `http://localhost:9090/dashboard`
+
+### æ ¸å¿ƒæ”¯æŒæ¨¡å‹æ¸…å•
+
+| æ¨¡å‹æ ‡è¯† (Model ID) | å¸¸è§åˆ«å | ä¸Šæ¸¸é€šé“æ˜ å°„ | æè¿° |
+|---|---|---|---|
+| `Seed-Code` | `doubao`, `seed` | `seed_m8` | å­—èŠ‚è·³åŠ¨ä»£ç ä¼˜åŒ–ä¸»åŠ›æ¨¡å‹ (é»˜è®¤) |
+| `DeepSeek-V4.1-Flash` | | å†…ç½®é€šé“ | DeepSeek æœ€æ–°é«˜åå Flash æ¨¡å‹ |
+| `DeepSeek-V4-Flash` | `deepseek-v4`, `deepseek-chat` | `deepseek-V3` | DeepSeek é«˜æ€§èƒ½é€šç”¨å¯¹è¯æ¨¡å‹ |
+| `DeepSeek-V4-Pro` | `deepseek-r1`, `deepseek-reasoner` | `deepseek-R1` | DeepSeek æ·±åº¦æ¨ç†æ¨¡å‹ï¼ˆæ”¯æŒæ€è€ƒé“¾ï¼‰ |
+| `GLM-5.3` | `glm-5`, `glm` | å†…ç½®é€šé“ | æ™ºè°±æ–°ä¸€ä»£é€šç”¨å¤§æ¨¡å‹ |
+| `GLM-5.3-Flash` | | å†…ç½®é€šé“ | æ™ºè°±è½»é‡æé€Ÿæ¨¡å‹ |
+| `Kimi-K3` | `kimi` | å†…ç½®é€šé“ | æœˆä¹‹æš—é¢é•¿ä¸Šä¸‹æ–‡ä¸»åŠ›æ¨¡å‹ |
+| `Qwen3.7-Plus` | `qwen` | å†…ç½®é€šé“ | é€šä¹‰åƒé—®å¢å¼ºç‰ˆä»£ç ä¸é€šç”¨æ¨¡å‹ |
+
+*å®Œæ•´ 21 ä¸ªæ¨¡å‹ï¼ˆ16 ä¸ªå†…ç½®æ¨¡å‹ + 5 ä¸ªé¢„è®¾æ¨¡å‹ï¼‰æ”¯æŒè°ƒç”¨ `GET /v1/models` è·å–æœ€æ–°åŠ¨æ€æ³¨å†Œè¡¨ã€‚*
+
+---
+
+## è®¤è¯æœºåˆ¶
+
+å¦‚æœé…ç½®äº† API Keyï¼Œæ‰€æœ‰å—ä¿æŠ¤ API è¯·æ±‚é¡»åœ¨ HTTP è¯·æ±‚å¤´ä¸­æä¾›ï¼š
 
 ```http
 Authorization: Bearer your-api-key
 ```
 
-### ÅäÖÃ API Keys
+### å®‰å…¨ä¸é˜²å‘†ç­–ç•¥
 
-ÔÚÆô¶¯ÅäÖÃÖĞÉèÖÃ£º
-
-```json
-{
-  "openai_api": {
-    "enabled": true,
-    "port": 8080,
-    "api_keys": ["sk-your-key-1", "sk-your-key-2"]
-  }
-}
-```
+1. **Localhost é»˜è®¤ä¿æŠ¤**ï¼šé»˜è®¤ä»…ç›‘å¬æœ¬åœ°ç¯å›åœ°å€ï¼ˆ`127.0.0.1` / `localhost`ï¼‰ã€‚
+2. **å±€åŸŸç½‘æš´éœ²æ‹¦æˆª**ï¼šè‹¥å¯åŠ¨å‚æ•°é™„åŠ  `-allow-lan` æˆ–ç»‘å®š `0.0.0.0`ï¼Œç³»ç»Ÿå¼ºåˆ¶è¦æ±‚å¿…é¡»åœ¨é…ç½®ä¸­é…ç½®é«˜å¼ºåº¦ `api_key`ï¼Œå¦åˆ™æ‹’ç»å¯åŠ¨ï¼Œæœç»å†…ç½‘èµ„äº§æ„å¤–è£¸éœ²é£é™©ã€‚
+3. **CSRF é˜²æŠ¤**ï¼šåœ¨æ—  Key æœ¬åœ°è¿è¡Œæ¨¡å¼ä¸‹ï¼Œç½‘å…³å¯¹éå—ä¿¡å¤–éƒ¨ç½‘é¡µ Origin å‘èµ·çš„è·¨ç«™è¯·æ±‚è¿›è¡Œæ‹¦æˆªï¼ˆHTTP 403ï¼‰ï¼Œé˜²æ­¢æ¶æ„ç½‘é¡µé€šè¿‡æœ¬åœ°ç«¯å£æ¢æµ‹åˆ©ç”¨ã€‚
 
 ---
 
-## ? API ¶Ëµã
+## API ç«¯ç‚¹
 
 ### 1. GET /v1/models
 
-»ñÈ¡¿ÉÓÃÄ£ĞÍÁĞ±í¡£
+è·å–å¯ç”¨æ¨¡å‹åˆ—è¡¨åŠå…¶å…ƒæ•°æ®ã€‚
 
-**ÇëÇó**:
+**è¯·æ±‚**:
 ```http
 GET /v1/models
 Authorization: Bearer sk-xxx
 ```
 
-**ÏìÓ¦**:
+**å“åº”**:
 ```json
 {
   "object": "list",
   "data": [
     {
-      "id": "deepseek-v3.1-terminus",
+      "id": "Seed-Code",
       "object": "model",
-      "created": 1234567890,
+      "created": 1726704000,
       "owned_by": "trae"
     },
     {
-      "id": "deepseek-v3",
+      "id": "DeepSeek-V4.1-Flash",
       "object": "model",
-      "created": 1234567890,
+      "created": 1726704000,
+      "owned_by": "trae"
+    },
+    {
+      "id": "DeepSeek-V4-Pro",
+      "object": "model",
+      "created": 1726704000,
       "owned_by": "trae"
     }
   ]
@@ -88,66 +94,31 @@ Authorization: Bearer sk-xxx
 
 ### 2. POST /v1/chat/completions
 
-´´½¨ÁÄÌìÍê³ÉÇëÇó£¨Ö§³ÖÁ÷Ê½ºÍ·ÇÁ÷Ê½£©¡£
+åˆ›å»ºå¯¹è¯å®Œæˆè¯·æ±‚ï¼ˆå…¼å®¹ OpenAI æ ‡å‡†ï¼Œæ”¯æŒæµå¼ä¸éæµå¼ï¼‰ã€‚
 
-**ÇëÇó**:
+**è¯·æ±‚**:
 ```http
 POST /v1/chat/completions
 Authorization: Bearer sk-xxx
 Content-Type: application/json
-```
 
-**ÇëÇóÌå**:
-```json
 {
-  "model": "deepseek-v3.1-terminus",
+  "model": "Seed-Code",
   "messages": [
-    {
-      "role": "system",
-      "content": "You are a helpful assistant."
-    },
-    {
-      "role": "user",
-      "content": "Hello, world!"
-    }
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello!"}
   ],
-  "stream": false,
-  "temperature": 0.7,
-  "max_tokens": 1000
+  "stream": false
 }
 ```
 
-**²ÎÊıËµÃ÷**:
-
-| ²ÎÊı | ÀàĞÍ | ±ØÌî | Ä¬ÈÏÖµ | ÃèÊö |
-|------|------|------|--------|------|
-| `model` | string | ? | - | Ä£ĞÍÃû³Æ |
-| `messages` | array | ? | - | ÏûÏ¢ÁĞ±í |
-| `stream` | boolean | ? | false | ÊÇ·ñÆôÓÃÁ÷Ê½ |
-| `temperature` | number | ? | 1.0 | ÎÂ¶È²ÎÊı |
-| `max_tokens` | integer | ? | null | ×î´ó token Êı |
-| `top_p` | number | ? | 1.0 | Top-p ²ÉÑù |
-| `frequency_penalty` | number | ? | 0.0 | ÆµÂÊ³Í·£ |
-| `presence_penalty` | number | ? | 0.0 | ´æÔÚ³Í·£ |
-
-**Message ¸ñÊ½**:
-
+**éæµå¼å“åº”**:
 ```json
 {
-  "role": "user|assistant|system",
-  "content": "ÏûÏ¢ÄÚÈİ"
-}
-```
-
-#### ·ÇÁ÷Ê½ÏìÓ¦
-
-**ÏìÓ¦**:
-```json
-{
-  "id": "chatcmpl-abc123",
+  "id": "chatcmpl-87c2b5d4",
   "object": "chat.completion",
-  "created": 1234567890,
-  "model": "deepseek-v3.1-terminus",
+  "created": 1726704000,
+  "model": "Seed-Code",
   "choices": [
     {
       "index": 0,
@@ -159,403 +130,133 @@ Content-Type: application/json
     }
   ],
   "usage": {
-    "prompt_tokens": 20,
-    "completion_tokens": 15,
-    "total_tokens": 35
+    "prompt_tokens": 15,
+    "completion_tokens": 10,
+    "total_tokens": 25
   }
 }
 ```
 
-#### Á÷Ê½ÏìÓ¦
+#### æµå¼å“åº” (SSE)
 
-ÉèÖÃ `"stream": true` ÆôÓÃ SSE Á÷Ê½´«Êä¡£
+å½“ `"stream": true` æ—¶ï¼ŒæœåŠ¡ç«¯ä»¥ `text/event-stream` æ ¼å¼æŒç»­åˆ†å—æ¨é€ï¼š
 
-**ÏìÓ¦¸ñÊ½** (SSE):
 ```
-data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1234567890,"model":"deepseek-v3.1-terminus","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+data: {"id":"chatcmpl-87c2b5d4","object":"chat.completion.chunk","created":1726704000,"model":"Seed-Code","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
 
-data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1234567890,"model":"deepseek-v3.1-terminus","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
+data: {"id":"chatcmpl-87c2b5d4","object":"chat.completion.chunk","created":1726704000,"model":"Seed-Code","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
 
-data: {"id":"chatcmpl-abc123","object":"chat.completion.chunk","created":1234567890,"model":"deepseek-v3.1-terminus","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":null}]}
+data: {"id":"chatcmpl-87c2b5d4","object":"chat.completion.chunk","created":1726704000,"model":"Seed-Code","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":null}]}
 
 data: [DONE]
 ```
 
-**Chunk ¸ñÊ½**:
-```json
-{
-  "id": "chatcmpl-abc123",
-  "object": "chat.completion.chunk",
-  "created": 1234567890,
-  "model": "deepseek-v3.1-terminus",
-  "choices": [
-    {
-      "index": 0,
-      "delta": {
-        "role": "assistant",
-        "content": "..."
-      },
-      "finish_reason": null
-    }
-  ]
-}
-```
+*è‹¥ä½¿ç”¨æ¨ç†æ¨¡å‹ï¼ˆå¦‚ DeepSeek-V4-Pro / deepseek-r1ï¼‰ï¼Œæ€è€ƒè¿‡ç¨‹å°†é€šè¿‡ `delta.reasoning_content` è¿›è¡Œå®æ—¶ç‹¬ç«‹åˆ†æµã€‚*
 
 ---
 
-### 3. POST /v1/completions
+### 3. POST /v1/messages
 
-Legacy Completions API£¨¼æÈİ¾É°æ OpenAI API£©¡£
+Anthropic Claude Messages åè®®å…¼å®¹ç«¯ç‚¹ã€‚
 
-**ÇëÇó**:
+**è¯·æ±‚**:
 ```http
-POST /v1/completions
-Authorization: Bearer sk-xxx
+POST /v1/messages
+x-api-key: sk-xxx
+anthropic-version: 2023-06-01
 Content-Type: application/json
-```
 
-**ÇëÇóÌå**:
-```json
 {
-  "model": "deepseek-v3.1-terminus",
-  "prompt": "Once upon a time",
-  "max_tokens": 100
-}
-```
-
-**ÏìÓ¦**:
-```json
-{
-  "id": "cmpl-abc123",
-  "object": "text_completion",
-  "created": 1234567890,
-  "model": "deepseek-v3.1-terminus",
-  "choices": [
-    {
-      "text": ", there was a brave knight...",
-      "index": 0,
-      "finish_reason": "length"
-    }
+  "model": "claude-3-5-sonnet",
+  "messages": [
+    {"role": "user", "content": "Hello Claude"}
   ],
-  "usage": {
-    "prompt_tokens": 4,
-    "completion_tokens": 10,
-    "total_tokens": 14
-  }
+  "max_tokens": 1024
 }
 ```
 
 ---
 
-### 4. GET /v1/queue/status
+### 4. POST /v1/responses
 
-»ñÈ¡¶ÓÁĞ×´Ì¬ĞÅÏ¢¡£
+Codex åè®®å…¼å®¹ç«¯ç‚¹ã€‚
 
-**ÇëÇó**:
+---
+
+### 5. GET /v1/queue/status
+
+è·å–ç½‘å…³å½“å‰å¹¶å‘è¯·æ±‚é˜Ÿåˆ—çŠ¶æ€ã€‚
+
+**è¯·æ±‚**:
 ```http
-GET /v1/queue/status?model=deepseek-v3.1-terminus
+GET /v1/queue/status
 Authorization: Bearer sk-xxx
 ```
 
-**ÏìÓ¦**:
+**å“åº”**:
 ```json
 {
-  "model": "deepseek-v3.1-terminus",
-  "queue_length": 5,
-  "estimated_wait_seconds": 120,
-  "active_requests": 3,
-  "total_capacity": 100
+  "active_requests": 1,
+  "max_concurrent": 4,
+  "queue_length": 0
 }
 ```
 
 ---
 
-### 5. GET /health
+### 6. GET /health
 
-½¡¿µ¼ì²é¶Ëµã¡£
+æœåŠ¡å­˜æ´»ä¸ç‰ˆæœ¬å¥åº·æ£€æŸ¥ç«¯ç‚¹ã€‚
 
-**ÇëÇó**:
+**è¯·æ±‚**:
 ```http
 GET /health
 ```
 
-**ÏìÓ¦**:
+**å“åº”**:
 ```json
 {
   "status": "ok",
-  "version": "0.1.0"
+  "version": "1.0.0"
 }
 ```
 
 ---
 
-## ? ´íÎó´¦Àí
+## é”™è¯¯å¤„ç†è§„èŒƒ
 
-### ´íÎóÏìÓ¦¸ñÊ½
+æ‰€æœ‰å¼‚å¸¸ç»Ÿä¸€è¿”å›è§„èŒƒçš„ JSON ç»“æ„ï¼š
 
 ```json
 {
   "error": {
-    "message": "´íÎóÃèÊö",
-    "type": "´íÎóÀàĞÍ",
+    "message": "é”™è¯¯æè¿°ä¿¡æ¯",
+    "type": "invalid_request_error",
     "param": null,
-    "code": "´íÎó´úÂë"
+    "code": "model_not_found"
   }
 }
 ```
 
-### ³£¼û´íÎóÂë
+### å¸¸ç”¨ HTTP çŠ¶æ€ç 
 
-| HTTP ×´Ì¬Âë | ´íÎóÀàĞÍ | ÃèÊö |
-|------------|---------|------|
-| 400 | `invalid_request` | ÇëÇó²ÎÊı´íÎó |
-| 401 | `invalid_auth` | ÈÏÖ¤Ê§°Ü£¨API Key ÎŞĞ§£© |
-| 403 | `forbidden` | È¨ÏŞ²»×ã |
-| 429 | `rate_limit` | ÇëÇóÆµÂÊÏŞÖÆ |
-| 500 | `internal_error` | ·şÎñÆ÷ÄÚ²¿´íÎó |
-| 503 | `overloaded` | ·şÎñ¹ıÔØ£¨¶ÓÁĞÂú£© |
-
-### ´íÎóÊ¾Àı
-
-**È±ÉÙ API Key**:
-```json
-{
-  "error": {
-    "message": "Missing Authorization header",
-    "type": "invalid_auth",
-    "code": "missing_authorization"
-  }
-}
-```
-
-**ÎŞĞ§Ä£ĞÍ**:
-```json
-{
-  "error": {
-    "message": "Model 'gpt-4' is not supported",
-    "type": "invalid_request",
-    "code": "model_not_supported"
-  }
-}
-```
-
-**¶ÓÁĞÒÑÂú**:
-```json
-{
-  "error": {
-    "message": "Queue is full, please try again later",
-    "type": "rate_limit",
-    "code": "queue_full"
-  }
-}
-```
+| HTTP çŠ¶æ€ç  | é”™è¯¯åˆ†ç±» (`type`) | è¯´æ˜ |
+|---|---|---|
+| 400 | `invalid_request_error` | è¯·æ±‚ä½“æ ¼å¼é”™è¯¯æˆ–ç¼ºå°‘å¿…å¡«å­—æ®µ |
+| 401 | `authentication_error` | API Key ç¼ºå¤±æˆ–æ— æ•ˆ |
+| 403 | `forbidden` | CSRF è·¨ç«™éæ³•è¯·æ±‚é˜»æ–­æˆ–æ— æƒé™ |
+| 429 | `rate_limit_error` | å¹¶å‘é™åˆ¶æˆ–è§¦å‘ä¸Šæ¸¸é™é¢‘ |
+| 500 | `api_error` | ç½‘å…³å¤„ç†æˆ–ä¸Šæ¸¸æœåŠ¡å¼‚å¸¸ |
 
 ---
 
-## ? ÅäÖÃÑ¡Ïî
+## æ›´æ–°æ—¥å¿—
 
-### OpenAI API ÅäÖÃ
+### v1.0.0 (2026-09-19)
 
-```json
-{
-  "openai_api": {
-    "enabled": true,
-    "port": 8080,
-    "api_keys": ["sk-xxx"],
-    "cors": {
-      "allowed_origins": ["*"],
-      "allowed_methods": ["GET", "POST", "OPTIONS"],
-      "allowed_headers": ["Authorization", "Content-Type"]
-    },
-    "logging": {
-      "enabled": true,
-      "include_body": true
-    }
-  }
-}
-```
-
-| ÅäÖÃÏî | ÀàĞÍ | Ä¬ÈÏÖµ | ÃèÊö |
-|-------|------|--------|------|
-| `enabled` | boolean | false | ÊÇ·ñÆôÓÃ OpenAI API |
-| `port` | integer | 8080 | ¼àÌı¶Ë¿Ú |
-| `api_keys` | array | [] | ÔÊĞíµÄ API Keys |
-| `cors.allowed_origins` | array | ["*"] | ÔÊĞíµÄÀ´Ô´ |
-| `logging.enabled` | boolean | true | ÊÇ·ñ¼ÇÂ¼ÇëÇóÈÕÖ¾ |
-| `logging.include_body` | boolean | false | ÊÇ·ñ¼ÇÂ¼ÇëÇóÌå |
-
----
-
-## ? Ê¹ÓÃÊ¾Àı
-
-### Python SDK
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:8080/v1",
-    api_key="sk-xxx"  # ÈÎÒâ·Ç¿Õ×Ö·û´®
-)
-
-# ·ÇÁ÷Ê½
-response = client.chat.completions.create(
-    model="deepseek-v3.1-terminus",
-    messages=[
-        {"role": "user", "content": "Hello!"}
-    ]
-)
-print(response.choices[0].message.content)
-
-# Á÷Ê½
-stream = client.chat.completions.create(
-    model="deepseek-v3.1-terminus",
-    messages=[
-        {"role": "user", "content": "Tell me a story"}
-    ],
-    stream=True
-)
-for chunk in stream:
-    if chunk.choices[0].delta.content:
-        print(chunk.choices[0].delta.content, end="")
-```
-
-### Node.js SDK
-
-```javascript
-import OpenAI from 'openai';
-
-const client = new OpenAI({
-  baseURL: 'http://localhost:8080/v1',
-  apiKey: 'sk-xxx'
-});
-
-// ·ÇÁ÷Ê½
-const response = await client.chat.completions.create({
-  model: 'deepseek-v3.1-terminus',
-  messages: [{ role: 'user', content: 'Hello!' }]
-});
-console.log(response.choices[0].message.content);
-
-// Á÷Ê½
-const stream = await client.chat.completions.create({
-  model: 'deepseek-v3.1-terminus',
-  messages: [{ role: 'user', content: 'Tell me a story' }],
-  stream: true
-});
-for await (const chunk of stream) {
-  process.stdout.write(chunk.choices[0].delta.content || '');
-}
-```
-
-### cURL
-
-```bash
-# ·ÇÁ÷Ê½
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Authorization: Bearer sk-xxx" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "deepseek-v3.1-terminus",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-
-# Á÷Ê½
-curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Authorization: Bearer sk-xxx" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "deepseek-v3.1-terminus",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "stream": true
-  }'
-```
-
----
-
-## ? ¼à¿ØÓëÈÕÖ¾
-
-### ÇëÇóÈÕÖ¾
-
-Ã¿¸öÇëÇó¶¼»á¼ÇÂ¼ÒÔÏÂĞÅÏ¢£º
-
-```
-[INFO] POST /v1/chat/completions - 200 OK - 1.234s - model=deepseek-v3.1-terminus, stream=true
-```
-
-°üº¬£º
-- HTTP ·½·¨ºÍÂ·¾¶
-- ÏìÓ¦×´Ì¬Âë
-- ÇëÇóºÄÊ±
-- Ä£ĞÍÃû³Æ
-- ÊÇ·ñÁ÷Ê½
-
-### ¶ÓÁĞ¼à¿Ø
-
-Í¨¹ı `/v1/queue/status` ¶ËµãÊµÊ±¼à¿Ø¶ÓÁĞ×´Ì¬¡£
-
----
-
-## ? °²È«½¨Òé
-
-1. **API Key ¹ÜÀí**
-   - ¶¨ÆÚÂÖ»» API Keys
-   - ²»ÒªÔÚ¿Í»§¶Ë±©Â¶ API Keys
-   - Ê¹ÓÃ»·¾³±äÁ¿´æ´¢Ãô¸ĞĞÅÏ¢
-
-2. **ÍøÂç¸ôÀë**
-   - ½ö¼àÌı±¾µØµØÖ·£¨127.0.0.1£©
-   - Ê¹ÓÃ·À»ğÇ½ÏŞÖÆ·ÃÎÊ
-   - ¿¼ÂÇÌí¼Ó IP °×Ãûµ¥
-
-3. **ËÙÂÊÏŞÖÆ**
-   - ÅäÖÃºÏÀíµÄ¶ÓÁĞ´óĞ¡
-   - ¼à¿ØÒì³£ÇëÇóÄ£Ê½
-   - ÊµÊ©ÇëÇóÆµÂÊÏŞÖÆ
-
----
-
-## ? ¹ÊÕÏÅÅ²é
-
-### ³£¼ûÎÊÌâ
-
-**Q: ÊÕµ½ 401 ´íÎó**
-- ¼ì²é Authorization Í·¸ñÊ½£º`Bearer sk-xxx`
-- È·ÈÏ API Key ÔÚÅäÖÃÖĞÒÑÉèÖÃ
-- ¼ì²éÊÇ·ñÓĞÇ°µ¼/ºóËæ¿Õ¸ñ
-
-**Q: Á÷Ê½ÏìÓ¦ÖĞ¶Ï**
-- ¼ì²éÍøÂçÁ¬½ÓÎÈ¶¨ĞÔ
-- ²é¿´·şÎñÆ÷ÈÕÖ¾ÊÇ·ñÓĞ´íÎó
-- È·ÈÏ¶ÓÁĞÎ´Âú
-
-**Q: Ä£ĞÍ²»Ö§³Ö**
-- È·ÈÏÄ£ĞÍÃû³ÆÆ´Ğ´ÕıÈ·
-- ²é¿´ `/v1/models` »ñÈ¡Ö§³ÖµÄÄ£ĞÍÁĞ±í
-- ¼ì²éÄ£ĞÍÓ³ÉäÅäÖÃ
-
----
-
-## ? ¸üĞÂÈÕÖ¾
-
-### v0.1.0 (2026-03-15)
-
-- ? ³õÊ¼°æ±¾·¢²¼
-- ? OpenAI ¼æÈİ API ²ã
-- ? Á÷Ê½ SSE Ö§³Ö
-- ? API Key ÈÏÖ¤
-- ? CORS Ö§³Ö
-- ? ÇëÇóÈÕÖ¾
-
----
-
-## ? Ïà¹ØÎÄµµ
-
-- [ÏîÄ¿ README](../../../README.md)
-- [¼Ü¹¹ÎÄµµ](../ARCHITECTURE.md)
-- [¹ÊÕÏÅÅ²éÖ¸ÄÏ](../../knowledge-base/troubleshooting/)
-
----
-
-**Î¬»¤Õß**: API-Agent  
-**×îºó¸üĞÂ**: 2026-03-15
+- æ­£å¼é‡Œç¨‹ç¢‘å‘å¸ƒï¼›
+- è‡ªåŠ¨åŒ– CI/CD è·¨å¹³å°äº¤å‰ç¼–è¯‘ï¼ˆWindows/macOS/Linux 6å¤§æ¶æ„æ”¯æŒï¼‰ï¼›
+- æ¡Œé¢ç«¯æ‰“åŒ…å‘å¸ƒï¼ˆNSIS å®‰è£…åŒ…ä¸ Portable ä¾¿æºç‰ˆï¼‰ï¼›
+- ç»Ÿä¸€æ¨¡å‹é€šé“åˆ†å‘ï¼ˆæ”¯æŒ 16 ä¸ªæ–°å†…ç½®æ¨¡å‹ä¸ 5 ä¸ªé¢„è®¾æ¨¡å‹ï¼‰ï¼›
+- WebUI ä»ªè¡¨ç›˜ä¸ SQLite æŒä¹…åŒ–ä¼šè¯æ—¥å¿—ï¼›
+- LAN æš´éœ²å®‰å…¨é˜²å‘†ä¸ CSRF é˜²æŠ¤åŠ å›ºã€‚

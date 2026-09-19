@@ -18,7 +18,10 @@ win:
     - target: nsis
       arch:
         - x64
-  artifactName: "TraeCN.Tools_${version}_x64-setup.${ext}"
+    - target: portable
+      arch:
+        - x64
+
 nsis:
   oneClick: false
   perMachine: false
@@ -27,3 +30,7 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: TraeCN Tools
   uninstallDisplayName: TraeCN Tools
+  artifactName: "TraeCN.Tools_${version}_x64-setup.${ext}"
+
+portable:
+  artifactName: "TraeCN.Tools_${version}_x64-portable.${ext}"

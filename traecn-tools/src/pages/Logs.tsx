@@ -1,220 +1,266 @@
-import React, { useState, useEffect } from 'react';
-import { ScrollText, Search, Filter, Download, Trash2, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  ScrollText, Search, Download, Trash2, RefreshCw,
+  Terminal, ArrowDown, Check, Copy, AlertCircle, Play, Square,
+} from 'lucide-react';
 import { useAppStore } from '../store';
 
-interface ProxyLog {
-  timestamp: string;
-  method: string;
-  path: string;
-  status: number;
-  duration: number;
-  model?: string;
-  accountId?: string;
-}
-
 export default function Logs() {
-  const { proxyLogs } = useAppStore();
+  const { proxyLogs, proxyRunning } = useAppStore();
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterMethod, setFilterMethod] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [logs, setLogs] = useState<ProxyLog[]>([]);
-  const pageSize = 20;
+  const [levelFilter, setLevelFilter] = useState<'all' | 'info' | 'warn' | 'error'>('all');
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [, setRefreshKey] = useState(0);
+  const terminalEndRef = useRef<HTMLDivElement>(null);
 
-  // Simulate logs from proxyLogs state
-  useEffect(() => {
-    // In production, this would fetch from actual proxy logs
-    const mockLogs: ProxyLog[] = proxyLogs.length > 0 ? proxyLogs : [];
-    setLogs(mockLogs);
-  }, [proxyLogs]);
+  // 解析与过滤日志
+  const filteredLogs = proxyLogs.filter((line) => {
+    if (typeof line !== 'string') return false;
+    const matchesSearch = searchTerm === '' || line.toLowerCase().includes(searchTerm.toLowerCase());
+    if (!matchesSearch) return false;
 
-  const filteredLogs = logs.filter(log => {
-    const matchesSearch = searchTerm === '' || 
-      log.path.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.model?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesMethod = filterMethod === 'all' || log.method === filterMethod;
-    const matchesStatus = filterStatus === 'all' || 
-      (filterStatus === 'success' && log.status >= 200 && log.status < 300) ||
-      (filterStatus === 'error' && log.status >= 400);
-    return matchesSearch && matchesMethod && matchesStatus;
+    if (levelFilter === 'all') return true;
+    const lower = line.toLowerCase();
+    if (levelFilter === 'error') return lower.includes('error') || lower.includes('err') || lower.includes('fail') || lower.includes('panic');
+    if (levelFilter === 'warn') return lower.includes('warn') || lower.includes('warning');
+    if (levelFilter === 'info') return lower.includes('info') || lower.includes('listening') || lower.includes('route');
+    return true;
   });
 
-  const totalPages = Math.ceil(filteredLogs.length / pageSize);
-  const paginatedLogs = filteredLogs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  // 统计指标
+  const totalCount = proxyLogs.length;
+  const errorCount = proxyLogs.filter(l => typeof l === 'string' && (l.toLowerCase().includes('error') || l.toLowerCase().includes('fail'))).length;
+  const warnCount = proxyLogs.filter(l => typeof l === 'string' && l.toLowerCase().includes('warn')).length;
+  const infoCount = totalCount - errorCount - warnCount;
 
-  const stats = {
-    total: logs.length,
-    success: logs.filter(l => l.status >= 200 && l.status < 300).length,
-    error: logs.filter(l => l.status >= 400).length,
-    avgDuration: logs.length > 0 ? Math.round(logs.reduce((sum, l) => sum + l.duration, 0) / logs.length) : 0,
+  // 自动滚动到底部
+  useEffect(() => {
+    if (autoScroll && terminalEndRef.current) {
+      terminalEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [filteredLogs, autoScroll]);
+
+  // 真实刷新
+  const handleRefresh = () => {
+    setRefreshKey((k) => k + 1);
   };
 
-  const getMethodColor = (method: string) => {
-    switch (method) {
-      case 'GET': return 'text-blue-400 bg-blue-500/10';
-      case 'POST': return 'text-green-400 bg-green-500/10';
-      case 'PUT': return 'text-yellow-400 bg-yellow-500/10';
-      case 'DELETE': return 'text-red-400 bg-red-500/10';
-      default: return 'text-dark-400 bg-dark-700/50';
+  // 真实清空
+  const handleClear = () => {
+    if (confirm('确定要清空当前的代理日志记录吗？')) {
+      useAppStore.setState({ proxyLogs: [] });
     }
   };
 
-  const getStatusColor = (status: number) => {
-    if (status >= 200 && status < 300) return 'text-green-400';
-    if (status >= 300 && status < 400) return 'text-yellow-400';
-    if (status >= 400) return 'text-red-400';
-    return 'text-dark-400';
+  // 真实导出
+  const handleExport = () => {
+    if (proxyLogs.length === 0) {
+      alert('当前没有日志可供导出');
+      return;
+    }
+    const logContent = proxyLogs.join('\n');
+    const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `traecn-proxy-logs-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // 复制全部日志
+  const handleCopyAll = async () => {
+    if (proxyLogs.length === 0) return;
+    try {
+      await navigator.clipboard.writeText(proxyLogs.join('\n'));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (e) {
+      console.error('Failed to copy logs:', e);
+    }
+  };
+
+  // 获取日志行颜色
+  const getLineStyle = (line: string) => {
+    const lower = line.toLowerCase();
+    if (lower.includes('error') || lower.includes('fail') || lower.includes('panic')) {
+      return 'text-red-400 bg-red-950/20';
+    }
+    if (lower.includes('warn') || lower.includes('warning')) {
+      return 'text-yellow-400 bg-yellow-950/20';
+    }
+    if (lower.includes('success') || lower.includes('listening') || lower.includes('healthy')) {
+      return 'text-green-400';
+    }
+    if (lower.includes('route') || lower.includes('request') || lower.includes('http')) {
+      return 'text-cyan-300';
+    }
+    return 'text-dark-200';
   };
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <ScrollText size={20} className="text-blue-400" />
-          <h1 className="text-lg font-semibold">������־</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button className="flex items-center gap-2 px-3 py-2 bg-dark-700 hover:bg-dark-600 rounded-lg text-sm text-dark-300 transition-colors">
-            <RefreshCw size={14} />
-            ˢ��
-          </button>
-          <button className="flex items-center gap-2 px-3 py-2 bg-dark-700 hover:bg-dark-600 rounded-lg text-sm text-dark-300 transition-colors">
-            <Download size={14} />
-            ����
-          </button>
-          <button className="flex items-center gap-2 px-3 py-2 bg-dark-700 hover:bg-dark-600 rounded-lg text-sm text-dark-300 transition-colors">
-            <Trash2 size={14} />
-            ���
-          </button>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-4">
-          <div className="text-xs text-dark-400 mb-1">��������</div>
-          <div className="text-2xl font-bold text-white">{stats.total}</div>
-        </div>
-        <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-4">
-          <div className="text-xs text-dark-400 mb-1">�ɹ�</div>
-          <div className="text-2xl font-bold text-green-400">{stats.success}</div>
-        </div>
-        <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-4">
-          <div className="text-xs text-dark-400 mb-1">ʧ��</div>
-          <div className="text-2xl font-bold text-red-400">{stats.error}</div>
-        </div>
-        <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-4">
-          <div className="text-xs text-dark-400 mb-1">ƽ���ӳ�</div>
-          <div className="text-2xl font-bold text-cyan-400">{stats.avgDuration}ms</div>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-4 mb-4">
+    <div className="p-6 h-full flex flex-col space-y-4 max-w-7xl mx-auto">
+      {/* 顶部标题与操作栏 */}
+      <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3">
-          <div className="flex-1 relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-500" />
-            <input
-              type="text"
-              placeholder="����·����ģ��..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 bg-dark-900 border border-dark-700 rounded-lg text-sm text-white placeholder-dark-500 focus:outline-none focus:border-blue-500"
-            />
+          <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
+            <Terminal size={20} />
           </div>
-          <div className="flex items-center gap-2">
-            <Filter size={16} className="text-dark-500" />
-            <select
-              value={filterMethod}
-              onChange={(e) => setFilterMethod(e.target.value)}
-              className="px-3 py-2 bg-dark-900 border border-dark-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
-            >
-              <option value="all">���з���</option>
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-              <option value="PUT">PUT</option>
-              <option value="DELETE">DELETE</option>
-            </select>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-2 bg-dark-900 border border-dark-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
-            >
-              <option value="all">����״̬</option>
-              <option value="success">�ɹ�</option>
-              <option value="error">ʧ��</option>
-            </select>
+          <div>
+            <h1 className="text-xl font-bold text-white flex items-center gap-2">
+              控制台与流量日志
+              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                proxyRunning ? 'bg-green-500/15 text-green-400 border border-green-500/30' : 'bg-dark-700 text-dark-400'
+              }`}>
+                {proxyRunning ? '● 代理监听中' : '○ 代理已停止'}
+              </span>
+            </h1>
+            <p className="text-xs text-dark-400 mt-0.5">
+              实时捕获 Go 核心代理网关标准输出流 (stdout/stderr)，支持快速筛选与审计
+            </p>
           </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleRefresh}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-dark-800 hover:bg-dark-700 border border-dark-600 rounded-lg text-xs text-dark-200 transition-colors"
+            title="重新渲染日志"
+          >
+            <RefreshCw size={13} />
+            刷新
+          </button>
+          <button
+            onClick={handleCopyAll}
+            disabled={proxyLogs.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-dark-800 hover:bg-dark-700 border border-dark-600 rounded-lg text-xs text-dark-200 transition-colors disabled:opacity-50"
+            title="复制控制台全部日志"
+          >
+            {copied ? <Check size={13} className="text-green-400" /> : <Copy size={13} />}
+            {copied ? '已复制' : '复制'}
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={proxyLogs.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-dark-800 hover:bg-dark-700 border border-dark-600 rounded-lg text-xs text-dark-200 transition-colors disabled:opacity-50"
+            title="导出文本日志文件"
+          >
+            <Download size={13} />
+            导出
+          </button>
+          <button
+            onClick={handleClear}
+            disabled={proxyLogs.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-lg text-xs transition-colors disabled:opacity-50"
+            title="清空当前日志流"
+          >
+            <Trash2 size={13} />
+            清空
+          </button>
         </div>
       </div>
 
-      {/* Logs Table */}
-      <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl overflow-hidden">
-        <table className="w-full">
-          <thead className="bg-dark-900/50 border-b border-dark-700">
-            <tr>
-              <th className="text-left py-3 px-4 text-xs font-medium text-dark-400">ʱ��</th>
-              <th className="text-left py-3 px-4 text-xs font-medium text-dark-400">����</th>
-              <th className="text-left py-3 px-4 text-xs font-medium text-dark-400">·��</th>
-              <th className="text-left py-3 px-4 text-xs font-medium text-dark-400">ģ��</th>
-              <th className="text-left py-3 px-4 text-xs font-medium text-dark-400">״̬</th>
-              <th className="text-left py-3 px-4 text-xs font-medium text-dark-400">�ӳ�</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-dark-700/50">
-            {paginatedLogs.length > 0 ? (
-              paginatedLogs.map((log, index) => (
-                <tr key={index} className="hover:bg-dark-700/30 transition-colors">
-                  <td className="py-3 px-4 text-sm text-dark-300">
-                    {new Date(log.timestamp).toLocaleString('zh-CN')}
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className={`px-2 py-1 rounded text-xs font-medium ${getMethodColor(log.method)}`}>
-                      {log.method}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-sm text-dark-300 font-mono">{log.path}</td>
-                  <td className="py-3 px-4 text-sm text-dark-400">{log.model || '-'}</td>
-                  <td className={`py-3 px-4 text-sm font-medium ${getStatusColor(log.status)}`}>
-                    {log.status}
-                  </td>
-                  <td className="py-3 px-4 text-sm text-dark-400">{log.duration}ms</td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan={6} className="py-12 text-center text-dark-500">
-                  ������־��¼
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      {/* 状态指标卡片 */}
+      <div className="grid grid-cols-4 gap-3 shrink-0">
+        <div className="bg-dark-900/60 border border-dark-700/50 rounded-xl p-3">
+          <div className="text-xs text-dark-400 mb-0.5">总日志条数</div>
+          <div className="text-xl font-bold text-white">{totalCount}</div>
+        </div>
+        <div className="bg-dark-900/60 border border-dark-700/50 rounded-xl p-3">
+          <div className="text-xs text-dark-400 mb-0.5">常规记录 (INFO)</div>
+          <div className="text-xl font-bold text-blue-400">{infoCount >= 0 ? infoCount : 0}</div>
+        </div>
+        <div className="bg-dark-900/60 border border-dark-700/50 rounded-xl p-3">
+          <div className="text-xs text-dark-400 mb-0.5">潜在警告 (WARN)</div>
+          <div className="text-xl font-bold text-yellow-400">{warnCount}</div>
+        </div>
+        <div className="bg-dark-900/60 border border-dark-700/50 rounded-xl p-3">
+          <div className="text-xs text-dark-400 mb-0.5">异常拦截 (ERROR)</div>
+          <div className="text-xl font-bold text-red-400">{errorCount}</div>
+        </div>
+      </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-4 py-3 border-t border-dark-700">
-            <div className="text-sm text-dark-500">
-              �� {currentPage} ҳ���� {totalPages} ҳ���ܼ� {filteredLogs.length} ����¼
-            </div>
-            <div className="flex items-center gap-2">
+      {/* 筛选与搜索工具条 */}
+      <div className="bg-dark-900/60 border border-dark-700/50 rounded-xl p-3 flex items-center justify-between gap-4 shrink-0">
+        <div className="flex items-center gap-2 flex-1 max-w-md relative">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400" />
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="搜索控制台关键字、模型名称、端口、状态码..."
+            className="w-full pl-9 pr-3 py-1.5 bg-dark-950 border border-dark-700 rounded-lg text-xs text-dark-200 placeholder-dark-500 focus:outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 bg-dark-950 p-1 rounded-lg border border-dark-800 text-xs">
+            {(['all', 'info', 'warn', 'error'] as const).map((lvl) => (
               <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="p-2 rounded-lg hover:bg-dark-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                key={lvl}
+                onClick={() => setLevelFilter(lvl)}
+                className={`px-2.5 py-1 rounded transition-colors ${
+                  levelFilter === lvl
+                    ? 'bg-blue-600 text-white font-medium'
+                    : 'text-dark-400 hover:text-dark-200'
+                }`}
               >
-                <ChevronLeft size={16} />
+                {lvl === 'all' ? '全部' : lvl.toUpperCase()}
               </button>
-              <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="p-2 rounded-lg hover:bg-dark-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
+            ))}
           </div>
-        )}
+
+          <label className="flex items-center gap-2 text-xs text-dark-300 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={autoScroll}
+              onChange={(e) => setAutoScroll(e.target.checked)}
+              className="rounded bg-dark-800 border-dark-600 text-blue-600 focus:ring-0 focus:ring-offset-0"
+            />
+            <ArrowDown size={13} />
+            自动滚屏
+          </label>
+        </div>
+      </div>
+
+      {/* 终端控制台核心视图 */}
+      <div className="flex-1 min-h-0 bg-dark-950 border border-dark-700/60 rounded-xl flex flex-col overflow-hidden shadow-inner font-mono">
+        <div className="px-4 py-2 bg-dark-900/80 border-b border-dark-800 flex items-center justify-between text-xs text-dark-400 shrink-0 select-none">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500/80 inline-block" />
+            <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/80 inline-block" />
+            <span className="w-2.5 h-2.5 rounded-full bg-green-500/80 inline-block" />
+            <span className="ml-2 text-dark-300 font-sans font-medium">trae-proxy.log</span>
+          </div>
+          <span>显示 {filteredLogs.length} / {totalCount} 行</span>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-1 text-xs leading-relaxed select-text">
+          {filteredLogs.length > 0 ? (
+            filteredLogs.map((line, idx) => (
+              <div key={idx} className={`flex items-start gap-3 py-0.5 px-2 rounded hover:bg-dark-800/40 transition-colors ${getLineStyle(line)}`}>
+                <span className="text-dark-600 select-none w-10 text-right shrink-0 font-sans text-[11px]">{idx + 1}</span>
+                <span className="whitespace-pre-wrap break-all flex-1">{line}</span>
+              </div>
+            ))
+          ) : (
+            <div className="h-full flex flex-col items-center justify-center text-dark-500 py-16">
+              <ScrollText size={36} className="mb-3 opacity-30 text-blue-400" />
+              <p className="text-sm">
+                {totalCount === 0 ? '暂无代理控制台日志' : '未找到匹配的日志行'}
+              </p>
+              <p className="text-xs text-dark-600 mt-1 font-sans">
+                {totalCount === 0
+                  ? '启动「API 反代」后，Go 核心网关的标准输出流将在此实时呈现'
+                  : '请尝试修改搜索词或重置级别筛选'}
+              </p>
+            </div>
+          )}
+          <div ref={terminalEndRef} />
+        </div>
       </div>
     </div>
   );

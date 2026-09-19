@@ -1,13 +1,10 @@
 import React, { useEffect } from 'react';
-import { HashRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Accounts from './pages/Accounts';
 import ApiProxy from './pages/ApiProxy';
 import Logs from './pages/Logs';
-import Stats from './pages/Stats';
-import Tokens from './pages/Tokens';
-import IpManagement from './pages/IpManagement';
 import SettingsPage from './pages/Settings';
 import { useAppStore } from './store';
 
@@ -26,7 +23,7 @@ export default function App() {
           <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-400 rounded-xl flex items-center justify-center text-xl font-bold mx-auto mb-4">
             T
           </div>
-          <div className="text-sm text-dark-400">º”‘ÿ÷–...</div>
+          <div className="text-sm text-dark-400">Âä†ËΩΩ‰∏≠...</div>
         </div>
       </div>
     );
@@ -40,10 +37,8 @@ export default function App() {
           <Route path="/accounts" element={<Accounts />} />
           <Route path="/proxy" element={<ApiProxy />} />
           <Route path="/logs" element={<Logs />} />
-          <Route path="/stats" element={<Stats />} />
-          <Route path="/tokens" element={<Tokens />} />
-          <Route path="/ip" element={<IpManagement />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
     </HashRouter>

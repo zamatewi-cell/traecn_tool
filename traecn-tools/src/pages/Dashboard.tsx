@@ -1,24 +1,74 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store';
 import { TRAE_MODELS, PROVIDER_COLORS } from '../types';
 import {
   Users, Zap, TrendingUp, Activity, ArrowRight,
-  Plus, RefreshCw, Download, UserCheck, Server, CheckCircle, XCircle,
+  Plus, RefreshCw, Download, UserCheck, Server, CheckCircle, XCircle, ShieldCheck,
 } from 'lucide-react';
 import { apiClient } from '../api/client';
 
 export default function Dashboard() {
-  const { accounts, proxyRunning, currentAccountId, backendHealth, availableModels, backendUrl, checkBackendHealth, fetchAvailableModels } = useAppStore();
+  const {
+    accounts, proxyRunning, currentAccountId, backendHealth,
+    availableModels, backendUrl, checkBackendHealth, fetchAvailableModels, switchAccount,
+  } = useAppStore();
+
+  const [refreshing, setRefreshing] = useState(false);
+
   const currentAccount = accounts.find((a) => a.id === currentAccountId);
   const activeAccounts = accounts.filter((a) => !a.disabled);
   const totalAccounts = accounts.length;
-  const proAccounts = accounts.filter((a) => a.isPro).length;
 
   // Check backend health on mount
   useEffect(() => {
     checkBackendHealth();
     fetchAvailableModels();
   }, []);
+
+  // çœŸå®åˆ·æ–°
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await checkBackendHealth();
+      await fetchAvailableModels();
+    } finally {
+      setTimeout(() => setRefreshing(false), 500);
+    }
+  };
+
+  // çœŸå®å¯¼å‡ºè´¦å·æ•°æ®
+  const handleExportAccounts = async () => {
+    if (accounts.length === 0) {
+      alert('å½“å‰æ²¡æœ‰è´¦å·å¯å¯¼å‡º');
+      return;
+    }
+    try {
+      const sanitized = accounts.map((a) => ({
+        id: a.id,
+        email: a.email,
+        username: a.username,
+        isPro: a.isPro,
+        disabled: a.disabled,
+        scope: a.scope,
+        region: a.region,
+        token: a.token ? `${a.token.slice(0, 8)}...` : '',
+        lastUsed: a.lastUsed,
+      }));
+      const result = await window.electronAPI?.exportAccounts({
+        data: {
+          accounts: sanitized,
+          exportTime: new Date().toISOString(),
+          version: '1.0.0',
+        },
+        defaultFileName: `traecn-accounts-export-${new Date().toISOString().slice(0, 10)}.json`,
+      });
+      if (result?.success) {
+        alert(`è´¦å·æ•°æ®å·²æˆåŠŸå¯¼å‡ºè‡³ï¼š${result.filePath}`);
+      }
+    } catch (e: any) {
+      alert(`å¯¼å‡ºé‡åˆ°é”™è¯¯: ${e?.message || e}`);
+    }
+  };
 
   // Group models by provider
   const providerGroups = TRAE_MODELS.reduce((acc, m) => {
@@ -33,18 +83,25 @@ export default function Dashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">
-            ÄãºÃ{currentAccount ? `, ${currentAccount.username || currentAccount.email}` : ''} ?
+            ä½ å¥½{currentAccount ? `, ${currentAccount.username || currentAccount.email}` : ''} ğŸ‘‹
           </h1>
-          <p className="text-dark-400 mt-1">TraeCN Tools ¹ÜÀíÃæ°å</p>
+          <p className="text-dark-400 mt-1">TraeCN Tools ç®¡ç†é¢æ¿</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-dark-800 hover:bg-dark-700 border border-dark-600 rounded-lg text-sm transition-colors">
+          <button
+            onClick={() => { window.location.hash = '/accounts'; }}
+            className="flex items-center gap-2 px-4 py-2 bg-dark-800 hover:bg-dark-700 border border-dark-600 rounded-lg text-sm transition-colors text-dark-200"
+          >
             <Plus size={16} />
-            Ìí¼ÓÕËºÅ
+            æ·»åŠ è´¦å·
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-colors">
-            <RefreshCw size={16} />
-            Ë¢ĞÂÅä¶î
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition-colors text-white disabled:opacity-50"
+          >
+            <RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} />
+            {refreshing ? 'åˆ·æ–°ä¸­...' : 'åˆ·æ–°çŠ¶æ€'}
           </button>
         </div>
       </div>
@@ -54,35 +111,39 @@ export default function Dashboard() {
         <StatCard
           icon={<Users size={20} className="text-blue-400" />}
           value={totalAccounts}
-          label="×ÜÕËºÅÊı"
+          label="æ€»è´¦å·æ•°"
           color="blue"
+          onClick={() => { window.location.hash = '/accounts'; }}
         />
         <StatCard
           icon={<Zap size={20} className="text-green-400" />}
           value={`${availableModels.length || TRAE_MODELS.length}`}
-          label="¿ÉÓÃÄ£ĞÍ"
-          sublabel={availableModels.length > 0 ? 'ºó¶ËÌá¹©' : 'Ãâ·ÑÊ¹ÓÃ'}
+          label="å¯ç”¨æ¨¡å‹"
+          sublabel={availableModels.length > 0 ? 'ç½‘å…³å·²æ³¨å†Œ' : 'å…¨é‡æ”¯æŒ'}
           color="green"
+          onClick={() => { window.location.hash = '/proxy'; }}
         />
         <StatCard
           icon={<Activity size={20} className="text-cyan-400" />}
           value={activeAccounts.length}
-          label="»îÔ¾ÕËºÅ"
+          label="æ´»è·ƒè´¦å·"
           color="cyan"
+          onClick={() => { window.location.hash = '/accounts'; }}
         />
         <StatCard
           icon={<TrendingUp size={20} className="text-orange-400" />}
-          value={proxyRunning ? 'ÔËĞĞÖĞ' : 'ÒÑÍ£Ö¹'}
-          label="·´´ú·şÎñ"
+          value={proxyRunning ? 'è¿è¡Œä¸­' : 'å·²åœæ­¢'}
+          label="åä»£æœåŠ¡"
           color={proxyRunning ? 'green' : 'red'}
+          onClick={() => { window.location.hash = '/proxy'; }}
         />
         <StatCard
           icon={backendHealth === 'healthy' ? <CheckCircle size={20} className="text-green-400" /> : <XCircle size={20} className="text-red-400" />}
-          value={backendHealth === 'healthy' ? 'Õı³£' : backendHealth === 'error' ? 'Òì³£' : 'Î´Öª'}
-          label="API ·şÎñ"
-          sublabel={backendHealth === 'healthy' ? backendUrl : 'µã»÷¼ì²é'}
+          value={backendHealth === 'healthy' ? 'æ­£å¸¸' : backendHealth === 'error' ? 'å¼‚å¸¸' : 'æ£€æŸ¥ä¸­'}
+          label="API æ¢æµ‹"
+          sublabel={backendHealth === 'healthy' ? backendUrl : 'ç‚¹å‡»é‡æ–°æ£€æµ‹'}
           color={backendHealth === 'healthy' ? 'green' : backendHealth === 'error' ? 'red' : 'gray'}
-          onClick={checkBackendHealth}
+          onClick={handleRefresh}
         />
       </div>
 
@@ -91,36 +152,67 @@ export default function Dashboard() {
         {/* Current Account */}
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-5">
           <div className="flex items-center gap-2 mb-4">
-            <div className="w-2 h-2 rounded-full bg-green-400 pulse-dot" />
-            <h2 className="text-base font-semibold">µ±Ç°ÕËºÅ</h2>
+            <div className={`w-2 h-2 rounded-full ${currentAccount ? 'bg-green-400 pulse-dot' : 'bg-dark-500'}`} />
+            <h2 className="text-base font-semibold">å½“å‰ç”Ÿæ•ˆè´¦å·</h2>
           </div>
           {currentAccount ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-dark-200">{currentAccount.email}</span>
-                  {currentAccount.isPro && (
-                    <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs font-medium">
-                      ¡ô PRO
-                    </span>
-                  )}
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center font-bold text-white">
+                    {(currentAccount.email[0] || 'T').toUpperCase()}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-dark-100 font-medium">{currentAccount.username || currentAccount.email}</span>
+                      {currentAccount.isPro ? (
+                        <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded text-xs font-medium">
+                          PRO ä¼šå‘˜
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-xs font-medium">
+                          åŸºç¡€è´¦å·
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-dark-400 mt-0.5 font-mono truncate max-w-[280px]">
+                      {currentAccount.email}
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="space-y-3">
-                <QuotaBar label="Ä£ĞÍÅä¶î" value={100} sublabel="Ãâ·Ñ ¡¤ ÎŞÏŞ" color="green" />
-                <div className="text-xs text-dark-400 mt-2">
-                  TraeCN ËùÓĞÄ£ĞÍÍêÈ«Ãâ·Ñ£¬ÎŞÅä¶îÏŞÖÆ
+
+              {/* çœŸå®æƒç›Šä¸çŠ¶æ€è¯´æ˜ï¼ˆå–ä»£è™šå‡100%é…é¢æ¡ï¼‰ */}
+              <div className="bg-dark-900/60 border border-dark-700/60 rounded-xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-dark-300 flex items-center gap-1.5">
+                    <ShieldCheck size={14} className="text-green-400" />
+                    æ¨¡å‹è°ƒç”¨é€šé“
+                  </span>
+                  <span className="text-green-400 font-medium">
+                    {currentAccount.disabled ? 'å·²ç¦ç”¨' : 'æ­£å¸¸å°±ç»ª (Ready)'}
+                  </span>
+                </div>
+                <div className="text-xs text-dark-400 leading-relaxed">
+                  å½“å‰è´¦å·ç”± Trae CN å®˜æ–¹åŸç”Ÿä¼šè¯ç›´æ¥é©±åŠ¨ï¼Œæ”¯æŒ 21 ä¸ªå†…ç½®å¤§è¯­è¨€æ¨¡å‹è‡ªç”±è°ƒç”¨ã€‚
                 </div>
               </div>
-              <button className="w-full py-2 bg-dark-700/50 hover:bg-dark-600/50 border border-dark-600/50 rounded-lg text-sm text-dark-300 transition-colors">
-                ÇĞ»»ÕËºÅ
+
+              <button
+                onClick={() => { window.location.hash = '/accounts'; }}
+                className="w-full py-2 bg-dark-700/50 hover:bg-dark-600/50 border border-dark-600/50 rounded-lg text-sm text-dark-200 transition-colors"
+              >
+                åˆ‡æ¢è´¦å·
               </button>
             </div>
           ) : (
             <div className="text-center py-8 text-dark-400">
-              <p>Î´Ñ¡Ôñµ±Ç°ÕËºÅ</p>
-              <button className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm text-white transition-colors">
-                Ìí¼ÓÕËºÅ
+              <p>æš‚æœªé€‰æ‹©ç”Ÿæ•ˆè´¦å·</p>
+              <button
+                onClick={() => { window.location.hash = '/accounts'; }}
+                className="mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm text-white transition-colors"
+              >
+                å‰å¾€æ·»åŠ æˆ–å¯¼å…¥è´¦å·
               </button>
             </div>
           )}
@@ -130,30 +222,45 @@ export default function Dashboard() {
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-5">
           <div className="flex items-center gap-2 mb-4">
             <TrendingUp size={16} className="text-cyan-400" />
-            <h2 className="text-base font-semibold">×î¼ÑÕËºÅÍÆ¼ö</h2>
+            <h2 className="text-base font-semibold">é¦–é€‰è´¦å·æ¨è</h2>
           </div>
           {activeAccounts.length > 0 ? (
             <div className="space-y-4">
               <div className="bg-gradient-to-r from-green-500/10 to-cyan-500/10 border border-green-500/20 rounded-xl p-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-xs text-dark-400 mb-1">ÍÆ¼öÓÃÓÚËùÓĞÄ£ĞÍ</div>
-                    <div className="text-lg font-semibold text-white">
+                    <div className="text-xs text-dark-400 mb-1">æ´»è·ƒå¥åº·åº¦æœ€ä¼˜</div>
+                    <div className="text-lg font-semibold text-white truncate max-w-[260px]">
                       {activeAccounts[0].email}
+                    </div>
+                    <div className="text-xs text-green-400 mt-1">
+                      {activeAccounts[0].id === currentAccountId ? 'å½“å‰å·²ç”Ÿæ•ˆ' : 'éšæ—¶å¯åˆ‡æ¢'}
                     </div>
                   </div>
                   <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center">
-                    <span className="text-green-400 font-bold text-lg">?</span>
+                    <UserCheck size={22} className="text-green-400" />
                   </div>
                 </div>
               </div>
-              <button className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 rounded-lg text-sm font-medium transition-all">
-                Ò»¼üÇĞ»»×î¼Ñ
+              <button
+                onClick={() => {
+                  switchAccount(activeAccounts[0].id);
+                }}
+                disabled={activeAccounts[0].id === currentAccountId}
+                className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 rounded-lg text-sm font-medium transition-all text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {activeAccounts[0].id === currentAccountId ? 'å½“å‰å·²æ˜¯è¯¥è´¦å·' : 'ä¸€é”®åˆ‡æ¢æ­¤è´¦å·'}
               </button>
             </div>
           ) : (
             <div className="text-center py-8 text-dark-400">
-              <p>ÔİÎŞ¿ÉÓÃÕËºÅ</p>
+              <p>æš‚æ— å¯ç”¨æ´»è·ƒè´¦å·</p>
+              <button
+                onClick={() => { window.location.hash = '/accounts'; }}
+                className="mt-3 px-4 py-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm text-dark-200 transition-colors"
+              >
+                ç«‹å³æ·»åŠ è´¦å·
+              </button>
             </div>
           )}
         </div>
@@ -161,10 +268,14 @@ export default function Dashboard() {
 
       {/* Available Models */}
       <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-5">
-        <h2 className="text-base font-semibold mb-4">¿ÉÓÃÄ£ĞÍ ¡¤ È«²¿Ãâ·Ñ</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold">æ”¯æŒæ¨¡å‹æ¸…å•</h2>
+          <span className="text-xs text-dark-400">
+            å…± {availableModels.length || TRAE_MODELS.length} ä¸ªæ¨¡å‹å·²æ¥å…¥
+          </span>
+        </div>
         <div className="grid grid-cols-3 gap-3">
           {availableModels.length > 0 ? (
-            // Show backend models
             (() => {
               const grouped = availableModels.reduce((acc, m: any) => {
                 const provider = m.provider || 'other';
@@ -172,7 +283,7 @@ export default function Dashboard() {
                 acc[provider].push(m);
                 return acc;
               }, {} as Record<string, typeof availableModels>);
-              
+
               return Object.entries(grouped).map(([provider, models]) => (
                 <div key={provider} className="bg-dark-900/50 rounded-lg p-3">
                   <div className="flex items-center gap-2 mb-2">
@@ -180,13 +291,13 @@ export default function Dashboard() {
                       className="w-2 h-2 rounded-full"
                       style={{ backgroundColor: PROVIDER_COLORS[provider] || '#6b7280' }}
                     />
-                    <span className="text-xs font-medium text-dark-300">{provider}</span>
+                    <span className="text-xs font-medium text-dark-300 uppercase">{provider}</span>
                   </div>
                   <div className="space-y-1">
                     {models.map((m: any) => (
                       <div key={m.id || m.configName} className="flex items-center gap-2 text-sm text-dark-200">
-                        <span>{(m as any).icon || '?'}</span>
-                        <span>{m.display_name || m.name || (m as any).displayName}</span>
+                        <span>âš¡</span>
+                        <span className="truncate">{m.display_name || m.name || m.displayName || m.id}</span>
                       </div>
                     ))}
                   </div>
@@ -194,7 +305,6 @@ export default function Dashboard() {
               ));
             })()
           ) : (
-            // Show default TRAE_MODELS
             Object.entries(providerGroups).map(([provider, models]) => (
               <div key={provider} className="bg-dark-900/50 rounded-lg p-3">
                 <div className="flex items-center gap-2 mb-2">
@@ -202,13 +312,13 @@ export default function Dashboard() {
                     className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: PROVIDER_COLORS[provider] }}
                   />
-                  <span className="text-xs font-medium text-dark-300">{provider}</span>
+                  <span className="text-xs font-medium text-dark-300 uppercase">{provider}</span>
                 </div>
                 <div className="space-y-1">
                   {models.map((m) => (
                     <div key={m.configName} className="flex items-center gap-2 text-sm text-dark-200">
                       <span>{m.icon}</span>
-                      <span>{m.displayName}</span>
+                      <span className="truncate">{m.displayName}</span>
                     </div>
                   ))}
                 </div>
@@ -220,12 +330,18 @@ export default function Dashboard() {
 
       {/* Quick Links */}
       <div className="grid grid-cols-2 gap-4">
-        <a href="#/accounts" className="flex items-center justify-between bg-dark-800/50 border border-dark-700/50 rounded-xl p-4 hover:border-dark-600 transition-colors group">
-          <span className="text-blue-400 font-medium">²é¿´ËùÓĞÕËºÅ</span>
+        <a
+          href="#/accounts"
+          className="flex items-center justify-between bg-dark-800/50 border border-dark-700/50 rounded-xl p-4 hover:border-dark-600 transition-colors group"
+        >
+          <span className="text-blue-400 font-medium">æŸ¥çœ‹ä¸ç®¡ç†æ‰€æœ‰è´¦å·</span>
           <ArrowRight size={18} className="text-dark-500 group-hover:text-blue-400 transition-colors" />
         </a>
-        <button className="flex items-center justify-between bg-dark-800/50 border border-dark-700/50 rounded-xl p-4 hover:border-dark-600 transition-colors group text-left">
-          <span className="text-blue-400 font-medium">µ¼³öÕËºÅÊı¾İ</span>
+        <button
+          onClick={handleExportAccounts}
+          className="flex items-center justify-between bg-dark-800/50 border border-dark-700/50 rounded-xl p-4 hover:border-dark-600 transition-colors group text-left"
+        >
+          <span className="text-blue-400 font-medium">å¯¼å‡ºè´¦å·æ•°æ®å¤‡ä»½</span>
           <Download size={18} className="text-dark-500 group-hover:text-blue-400 transition-colors" />
         </button>
       </div>
@@ -242,7 +358,7 @@ function StatCard({ icon, value, label, sublabel, color, onClick }: {
   onClick?: () => void;
 }) {
   return (
-    <div 
+    <div
       className={`bg-dark-800/50 border border-dark-700/50 rounded-xl p-4 card-hover${onClick ? ' cursor-pointer' : ''}`}
       onClick={onClick}
     >
@@ -250,39 +366,8 @@ function StatCard({ icon, value, label, sublabel, color, onClick }: {
       <div className="text-2xl font-bold text-white">{value}</div>
       <div className="text-sm text-dark-400 mt-1">{label}</div>
       {sublabel && (
-        <div className="text-xs text-green-400 mt-0.5">? {sublabel}</div>
+        <div className="text-xs text-green-400 mt-0.5 truncate">{sublabel}</div>
       )}
-    </div>
-  );
-}
-
-function QuotaBar({ label, value, sublabel, color }: {
-  label: string;
-  value: number;
-  sublabel: string;
-  color: string;
-}) {
-  const colorMap: Record<string, string> = {
-    green: 'bg-green-500',
-    blue: 'bg-blue-500',
-    orange: 'bg-orange-500',
-    red: 'bg-red-500',
-  };
-
-  return (
-    <div>
-      <div className="flex items-center justify-between text-sm mb-1.5">
-        <span className="text-dark-300">{label}</span>
-        <span className="text-dark-200">{sublabel} <span className="font-semibold text-green-400">{value}%</span></span>
-      </div>
-      <div className="h-2 bg-dark-700 rounded-full overflow-hidden">
-        <div
-          className={`h-full rounded-full ${colorMap[color] || colorMap.green} relative`}
-          style={{ width: `${value}%` }}
-        >
-          <div className="absolute inset-0 progress-bar-shine" />
-        </div>
-      </div>
     </div>
   );
 }

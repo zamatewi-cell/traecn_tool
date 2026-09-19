@@ -1,42 +1,152 @@
-import React, { useState } from 'react';
-import { Settings as SettingsIcon, Globe, Moon, Bell, Power, Database, Download, Trash2, Shield, Zap, HardDrive, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import {
+  Settings as SettingsIcon, Globe, Moon, Bell, Power,
+  Database, Download, Trash2, Shield, Zap, HardDrive, AlertTriangle, ExternalLink,
+} from 'lucide-react';
+import { useAppStore } from '../store';
 
 export default function SettingsPage() {
-  const [language, setLanguage] = useState('zh');
-  const [theme, setTheme] = useState('dark');
-  const [autoStart, setAutoStart] = useState(false);
-  const [minimizeToTray, setMinimizeToTray] = useState(true);
-  const [showNotifications, setShowNotifications] = useState(true);
-  const [logRetention, setLogRetention] = useState('7');
+  const { accounts, proxyConfig } = useAppStore();
+
+  const [language, setLanguage] = useState(() => localStorage.getItem('traecn_lang') || 'zh');
+  const [theme, setTheme] = useState(() => localStorage.getItem('traecn_theme') || 'dark');
+  const [autoStart, setAutoStart] = useState(() => localStorage.getItem('traecn_autostart') === 'true');
+  const [minimizeToTray, setMinimizeToTray] = useState(() => localStorage.getItem('traecn_tray') !== 'false');
+  const [showNotifications, setShowNotifications] = useState(() => localStorage.getItem('traecn_notify') !== 'false');
+  const [logRetention, setLogRetention] = useState(() => localStorage.getItem('traecn_log_retention') || '7');
   const [dataDir, setDataDir] = useState('');
+
+  useEffect(() => {
+    window.electronAPI?.getDataDir().then((dir) => {
+      if (dir) setDataDir(dir);
+    }).catch(() => {});
+  }, []);
+
+  const handleToggleAutoStart = (val: boolean) => {
+    setAutoStart(val);
+    localStorage.setItem('traecn_autostart', String(val));
+  };
+
+  const handleToggleMinimizeToTray = (val: boolean) => {
+    setMinimizeToTray(val);
+    localStorage.setItem('traecn_tray', String(val));
+  };
+
+  const handleToggleNotifications = (val: boolean) => {
+    setShowNotifications(val);
+    localStorage.setItem('traecn_notify', String(val));
+  };
+
+  const handleLogRetentionChange = (val: string) => {
+    setLogRetention(val);
+    localStorage.setItem('traecn_log_retention', val);
+  };
 
   const handleOpenDataDir = async () => {
     try {
       const dir = await window.electronAPI?.getDataDir();
       if (dir) {
         setDataDir(dir);
-        window.electronAPI?.openPath(dir);
+        await window.electronAPI?.openPath(dir);
       }
     } catch (error) {
       console.error('Failed to open data directory:', error);
     }
   };
 
+  // ST1: çœŸå®å¯¼å‡ºå…¨éƒ¨æ•°æ®
   const handleExportData = async () => {
-    alert('Êı¾İµ¼³ö¹¦ÄÜ¿ª·¢ÖĞ...');
+    try {
+      const backupData = {
+        version: '1.0.0',
+        exportedAt: new Date().toISOString(),
+        accounts,
+        proxyConfig,
+      };
+
+      const defaultFileName = `traecn-tools-full-backup-${new Date().toISOString().slice(0, 10)}.json`;
+
+      if (window.electronAPI?.exportAccounts) {
+        const res = await window.electronAPI.exportAccounts({
+          data: backupData,
+          defaultFileName,
+        });
+        if (res.canceled) return;
+        if (res.success) {
+          alert('æ•°æ®å¤‡ä»½å·²æˆåŠŸå¯¼å‡ºè‡³ï¼š' + res.filePath);
+        } else if (res.error) {
+          alert('å¯¼å‡ºå¤±è´¥: ' + res.error);
+        }
+        return;
+      }
+
+      // Web å¤‡ç”¨æ–¹æ¡ˆ
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = defaultFileName;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      alert('å¯¼å‡ºé‡åˆ°å¼‚å¸¸: ' + e?.message);
+    }
   };
 
+  // ST2: çœŸå®æ¸…é™¤æ‰€æœ‰æ•°æ®
   const handleClearData = async () => {
-    if (confirm('È·¶¨ÒªÇå³ıËùÓĞÊı¾İÂğ£¿´Ë²Ù×÷²»¿É»Ö¸´£¡')) {
-      alert('Çå³ıÊı¾İ¹¦ÄÜ¿ª·¢ÖĞ...');
+    if (confirm('ã€é«˜å±ç¡®è®¤ã€‘ç¡®å®šè¦æ¸…é™¤æ‰€æœ‰æœ¬åœ°æ•°æ®ä¸é…ç½®å—ï¼Ÿæ­¤æ“ä½œå°†é‡ç½®å…¨éƒ¨è´¦å·ä¸ä»£ç†è®¾ç½®ï¼Œä¸å¯æ’¤é”€ï¼')) {
+      try {
+        const emptyConfig = {
+          listenPort: 8045,
+          requestTimeout: 120,
+          autoStart: false,
+          allowLan: false,
+          authEnabled: true,
+          authMode: 'auto' as const,
+          apiKey: '',
+          webUiPassword: '',
+          userAgentOverride: false,
+          userAgentValue: '',
+        };
+
+        if (window.electronAPI?.saveData) {
+          await window.electronAPI.saveData({
+            accounts: [],
+            proxyConfig: emptyConfig,
+            settings: { language: 'zh', theme: 'dark' },
+          });
+        }
+
+        // é‡ç½®å†…å­˜ store
+        useAppStore.setState({
+          accounts: [],
+          currentAccountId: null,
+          proxyConfig: emptyConfig,
+          proxyLogs: [],
+        });
+
+        alert('æ‰€æœ‰æœ¬åœ°æ•°æ®å·²æˆåŠŸæ¸…ç©ºå¹¶é‡ç½®ä¸ºåˆå§‹çŠ¶æ€');
+      } catch (e: any) {
+        alert('æ¸…é™¤æ•°æ®å¤±è´¥: ' + e?.message);
+      }
+    }
+  };
+
+  // ST6: çœŸå®æ‰“å¼€å®˜æ–¹æ–‡æ¡£
+  const handleOpenDoc = () => {
+    if (window.electronAPI?.openExternal) {
+      window.electronAPI.openExternal('https://trae.cn');
+    } else {
+      window.open('https://trae.cn', '_blank');
     }
   };
 
   return (
-    <div className="p-6 max-w-4xl">
-      <div className="flex items-center gap-2 mb-6">
+    <div className="p-6 max-w-4xl space-y-6">
+      <div className="flex items-center gap-2 mb-2">
         <SettingsIcon size={20} className="text-blue-400" />
-        <h1 className="text-lg font-semibold">ÉèÖÃ</h1>
+        <h1 className="text-lg font-semibold">ç³»ç»Ÿè®¾ç½®</h1>
       </div>
 
       <div className="space-y-6">
@@ -44,68 +154,64 @@ export default function SettingsPage() {
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-5 space-y-4">
           <div className="flex items-center gap-2 mb-2">
             <Globe size={16} className="text-blue-400" />
-            <h2 className="text-sm font-semibold text-dark-200">Í¨ÓÃÉèÖÃ</h2>
+            <h2 className="text-sm font-semibold text-dark-200">é€šç”¨åå¥½</h2>
           </div>
 
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-dark-200">ÓïÑÔ</div>
-              <div className="text-xs text-dark-500">Ñ¡Ôñ½çÃæÏÔÊ¾ÓïÑÔ</div>
+              <div className="text-sm text-dark-200">ç•Œé¢è¯­è¨€</div>
+              <div className="text-xs text-dark-500">å½“å‰å®¢æˆ·ç«¯æ˜¾ç¤ºçš„ç³»ç»Ÿè¯­è¨€</div>
             </div>
             <select
               value={language}
-              onChange={(e) => setLanguage(e.target.value)}
+              onChange={(e) => {
+                setLanguage(e.target.value);
+                localStorage.setItem('traecn_lang', e.target.value);
+              }}
               className="px-3 py-1.5 bg-dark-900 border border-dark-600 rounded-lg text-sm text-dark-200 focus:outline-none focus:border-blue-500"
             >
-              <option value="zh">ÖĞÎÄ</option>
+              <option value="zh">ç®€ä½“ä¸­æ–‡ (Chinese)</option>
               <option value="en">English</option>
             </select>
           </div>
 
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-dark-200">Ö÷Ìâ</div>
-              <div className="text-xs text-dark-500">Ñ¡Ôñ½çÃæÖ÷Ìâ·ç¸ñ</div>
+              <div className="text-sm text-dark-200">å¤–è§‚ä¸»é¢˜</div>
+              <div className="text-xs text-dark-500">å½“å‰å·²é€‚é…ä¸“ä¸šæå¤œæ·±è‰²ä¸»é¢˜</div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex gap-2">
               <button
-                onClick={() => setTheme('dark')}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-                  theme === 'dark'
-                    ? 'bg-blue-500/20 border-blue-500 text-blue-400'
-                    : 'bg-dark-900 border-dark-600 text-dark-400 hover:border-dark-500'
-                }`}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium"
               >
-                <Moon size={14} />
-                ÉîÉ«
+                <Moon size={13} />
+                æå¤œæ·±è‰²
               </button>
               <button
-                onClick={() => setTheme('light')}
                 disabled
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-dark-600 bg-dark-900 text-dark-500 cursor-not-allowed text-sm"
-                title="¼´½«Ö§³Ö"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-dark-700 text-dark-500 rounded-lg text-xs cursor-not-allowed opacity-50"
+                title="è§„åˆ’æ”¯æŒä¸­"
               >
-                <span>??</span>
-                Ç³É«
+                æµ…è‰²ä¸»é¢˜ (å¾…å¼€æ”¾)
               </button>
             </div>
           </div>
         </div>
 
-        {/* System Settings */}
+        {/* System Settings (ST4: è”åŠ¨ localStorage) */}
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-5 space-y-4">
           <div className="flex items-center gap-2 mb-2">
             <Power size={16} className="text-purple-400" />
-            <h2 className="text-sm font-semibold text-dark-200">ÏµÍ³ÉèÖÃ</h2>
+            <h2 className="text-sm font-semibold text-dark-200">ç³»ç»Ÿä¸å®ˆæŠ¤</h2>
           </div>
 
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-dark-200">¿ª»ú×ÔÆô¶¯</div>
-              <div className="text-xs text-dark-500">ÏµÍ³Æô¶¯Ê±×Ô¶¯ÔËĞĞÓ¦ÓÃ</div>
+              <div className="text-sm text-dark-200">å¼€æœºè‡ªå¯åŠ¨</div>
+              <div className="text-xs text-dark-500">ç³»ç»Ÿç™»å½•æ—¶è‡ªåŠ¨é©»ç•™åå°è¿è¡Œ</div>
             </div>
             <button
-              onClick={() => setAutoStart(!autoStart)}
+              onClick={() => handleToggleAutoStart(!autoStart)}
               className={`relative w-12 h-6 rounded-full transition-colors ${
                 autoStart ? 'bg-green-500' : 'bg-dark-600'
               }`}
@@ -120,11 +226,11 @@ export default function SettingsPage() {
 
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-dark-200">×îĞ¡»¯µ½ÏµÍ³ÍĞÅÌ</div>
-              <div className="text-xs text-dark-500">¹Ø±Õ´°¿ÚÊ±Òş²Øµ½ÍĞÅÌÇøÓò</div>
+              <div className="text-sm text-dark-200">å…³é—­æ—¶æœ€å°åŒ–åˆ°ç³»ç»Ÿæ‰˜ç›˜</div>
+              <div className="text-xs text-dark-500">é¿å…è¯¯è§¦å…³é—­çª—å£ä¸­æ–­ä»£ç†è½¬å‘æœåŠ¡</div>
             </div>
             <button
-              onClick={() => setMinimizeToTray(!minimizeToTray)}
+              onClick={() => handleToggleMinimizeToTray(!minimizeToTray)}
               className={`relative w-12 h-6 rounded-full transition-colors ${
                 minimizeToTray ? 'bg-green-500' : 'bg-dark-600'
               }`}
@@ -139,11 +245,11 @@ export default function SettingsPage() {
 
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-dark-200">Í¨ÖªÌáĞÑ</div>
-              <div className="text-xs text-dark-500">ÏÔÊ¾ÏµÍ³Í¨ÖªºÍÌáĞÑ</div>
+              <div className="text-sm text-dark-200">æœåŠ¡çŠ¶æ€æ¡Œé¢é€šçŸ¥</div>
+              <div className="text-xs text-dark-500">åœ¨ä»£ç†å¯åŠ¨/åœæ­¢åŠä¼šè¯å¼‚å¸¸æ—¶å¼¹å‡ºé€šçŸ¥</div>
             </div>
             <button
-              onClick={() => setShowNotifications(!showNotifications)}
+              onClick={() => handleToggleNotifications(!showNotifications)}
               className={`relative w-12 h-6 rounded-full transition-colors ${
                 showNotifications ? 'bg-green-500' : 'bg-dark-600'
               }`}
@@ -157,112 +263,107 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Proxy Settings */}
+        {/* Proxy Settings (ST3/ST5: æ¸…ç†å‡ IP æŒ‰é’®ï¼Œè”åŠ¨æ—¥å¿—æ»šåŠ¨) */}
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-5 space-y-4">
           <div className="flex items-center gap-2 mb-2">
             <Zap size={16} className="text-yellow-400" />
-            <h2 className="text-sm font-semibold text-dark-200">´úÀíÉèÖÃ</h2>
+            <h2 className="text-sm font-semibold text-dark-200">æ—¥å¿—ä¸è¿ç»´ç­–ç•¥</h2>
           </div>
 
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-dark-200">ÈÕÖ¾±£ÁôÌìÊı</div>
-              <div className="text-xs text-dark-500">³¬¹ıÌìÊıµÄÈÕÖ¾½«×Ô¶¯ÇåÀí</div>
+              <div className="text-sm text-dark-200">æ§åˆ¶å°æ—¥å¿—ä¿ç•™ç­–ç•¥</div>
+              <div className="text-xs text-dark-500">å†…å­˜ä¸­æœ€å¤šä¿ç•™ 500 è¡Œæµå¼æ—¥å¿—ï¼Œè‡ªåŠ¨æ»šåŠ¨æ¸…ç†</div>
             </div>
             <select
               value={logRetention}
-              onChange={(e) => setLogRetention(e.target.value)}
+              onChange={(e) => handleLogRetentionChange(e.target.value)}
               className="px-3 py-1.5 bg-dark-900 border border-dark-600 rounded-lg text-sm text-dark-200 focus:outline-none focus:border-blue-500"
             >
-              <option value="1">1 Ìì</option>
-              <option value="3">3 Ìì</option>
-              <option value="7">7 Ìì</option>
-              <option value="14">14 Ìì</option>
-              <option value="30">30 Ìì</option>
-              <option value="90">90 Ìì</option>
+              <option value="1">æŒ‰ 1 å¤©æ»šåŠ¨</option>
+              <option value="3">æŒ‰ 3 å¤©æ»šåŠ¨</option>
+              <option value="7">æŒ‰ 7 å¤©æ»šåŠ¨ (æ¨è)</option>
+              <option value="14">æŒ‰ 14 å¤©æ»šåŠ¨</option>
+              <option value="30">æŒ‰ 30 å¤©æ»šåŠ¨</option>
             </select>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-dark-200">IP ·ÃÎÊ¿ØÖÆ</div>
-              <div className="text-xs text-dark-500">¹ÜÀíÔÊĞí·ÃÎÊµÄ IP µØÖ·</div>
-            </div>
-            <button className="px-3 py-1.5 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm text-dark-200 transition-colors">
-              ÅäÖÃ
-            </button>
           </div>
         </div>
 
-        {/* Data Management */}
+        {/* Data Management (ST1/ST2: çœŸå®å¯¼å‡ºä¸çœŸå®æ¸…é™¤) */}
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-5 space-y-4">
           <div className="flex items-center gap-2 mb-2">
             <Database size={16} className="text-green-400" />
-            <h2 className="text-sm font-semibold text-dark-200">Êı¾İ¹ÜÀí</h2>
+            <h2 className="text-sm font-semibold text-dark-200">å­˜å‚¨ä¸æ•°æ®ç®¡ç†</h2>
           </div>
 
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm text-dark-200">Êı¾İÄ¿Â¼</div>
-              <div className="text-xs text-dark-500">{dataDir || 'µã»÷°´Å¥´ò¿ªÊı¾İ´æ´¢Î»ÖÃ'}</div>
+              <div className="text-sm text-dark-200">æ•°æ®ç›®å½•</div>
+              <div className="text-xs text-dark-500 font-mono truncate max-w-md">{dataDir || 'ç‚¹å‡»æŒ‰é’®æ‰“å¼€å­˜å‚¨ä½ç½®'}</div>
             </div>
             <button
               onClick={handleOpenDataDir}
-              className="flex items-center gap-2 px-4 py-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm transition-colors text-dark-200"
             >
               <HardDrive size={14} />
-              ´ò¿ªÄ¿Â¼
+              æ‰“å¼€ç›®å½•
             </button>
           </div>
 
           <div className="flex gap-3 pt-2">
             <button
               onClick={handleExportData}
-              className="flex items-center gap-2 px-4 py-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm transition-colors"
+              className="flex items-center gap-2 px-4 py-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm transition-colors text-dark-200"
             >
               <Download size={14} />
-              µ¼³öÊı¾İ
+              å¯¼å‡ºæ•°æ®å¤‡ä»½
             </button>
             <button
               onClick={handleClearData}
               className="flex items-center gap-2 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-400 rounded-lg text-sm transition-colors"
             >
               <Trash2 size={14} />
-              Çå³ıÊı¾İ
+              æ¸…é™¤æ•°æ®
             </button>
           </div>
 
           <div className="flex items-start gap-2 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
             <AlertTriangle size={16} className="text-yellow-400 mt-0.5 flex-shrink-0" />
             <div className="text-xs text-yellow-200">
-              <div className="font-medium mb-1">×¢Òâ</div>
-              <div>Çå³ıÊı¾İ½«É¾³ıËùÓĞÅäÖÃ¡¢ÕËºÅĞÅÏ¢ºÍÈÕÖ¾¼ÇÂ¼£¬´Ë²Ù×÷²»¿É»Ö¸´¡£Çë½÷É÷²Ù×÷£¡</div>
+              <div className="font-medium mb-0.5">æ³¨æ„</div>
+              <div>æ¸…é™¤æ•°æ®å°†æ°¸ä¹…é‡ç½®æ‰€æœ‰è´¦å·ä¸è‡ªå®šä¹‰ä»£ç†é…ç½®ï¼Œæ“ä½œå‰å»ºè®®å…ˆæ‰§è¡Œã€Œå¯¼å‡ºæ•°æ®å¤‡ä»½ã€ã€‚</div>
             </div>
           </div>
         </div>
 
-        {/* About */}
+        {/* About (ST6: çœŸå®æ‰“å¼€å®˜æ–¹æ–‡æ¡£) */}
         <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-5 space-y-3">
           <div className="flex items-center gap-2 mb-2">
             <Shield size={16} className="text-blue-400" />
-            <h2 className="text-sm font-semibold text-dark-200">¹ØÓÚ</h2>
+            <h2 className="text-sm font-semibold text-dark-200">å…³äº TraeCN Tools</h2>
           </div>
           <div className="space-y-2 text-sm text-dark-400">
             <div className="flex justify-between">
-              <span>°æ±¾</span>
-              <span className="text-dark-300">1.0.0</span>
+              <span>ç‰ˆæœ¬å·</span>
+              <span className="text-dark-300 font-mono">v1.0.0 (Production Release)</span>
             </div>
             <div className="flex justify-between">
-              <span>¿ò¼Ü</span>
-              <span className="text-dark-300">Electron + React</span>
+              <span>åº”ç”¨æ¶æ„</span>
+              <span className="text-dark-300">Electron + Vite + React 18 + Tailwind CSS</span>
             </div>
             <div className="flex justify-between">
-              <span>¹¹½¨Ê±¼ä</span>
-              <span className="text-dark-300">{new Date().toLocaleDateString('zh-CN')}</span>
+              <span>æ ¸å¿ƒç½‘å…³</span>
+              <span className="text-dark-300">Go trae-proxy (Masticate & AgentTask Engine)</span>
             </div>
-            <div className="flex justify-between">
-              <span>¼¼ÊõÖ§³Ö</span>
-              <span className="text-blue-400 cursor-pointer hover:underline">²é¿´ÎÄµµ</span>
+            <div className="flex justify-between items-center">
+              <span>å®˜æ–¹ç«™ç‚¹ä¸æŒ‡å—</span>
+              <button
+                onClick={handleOpenDoc}
+                className="text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1 text-xs"
+              >
+                <span>è®¿é—® Trae CN å®˜ç½‘</span>
+                <ExternalLink size={12} />
+              </button>
             </div>
           </div>
         </div>

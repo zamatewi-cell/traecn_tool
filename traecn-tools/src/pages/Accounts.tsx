@@ -3,9 +3,9 @@ import { useAppStore } from '../store';
 import type { Account, DeviceFingerprint } from '../types';
 import {
   Search, LayoutList, LayoutGrid, Plus, RefreshCw,
-  Upload, Download, MoreHorizontal, Fingerprint, Tag,
-  ArrowRightLeft, Flame, Eye, Trash2, Ban, Copy,
-  ChevronDown, X, Check, GripVertical,
+  Upload, Download, Fingerprint, Tag,
+  ArrowRightLeft, Trash2, Ban,
+  ChevronLeft, ChevronRight, X, Check,
 } from 'lucide-react';
 
 type ViewMode = 'list' | 'grid';
@@ -19,19 +19,25 @@ export default function Accounts() {
   const [showFingerprintModal, setShowFingerprintModal] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState<string | null>(null);
   const [labelInput, setLabelInput] = useState('');
-  const [showContextMenu, setShowContextMenu] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState<number>(10);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   const filteredAccounts = accounts.filter((a) => {
     const matchesSearch = !searchQuery ||
       a.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.label.toLowerCase().includes(searchQuery.toLowerCase());
+      (a.label && a.label.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (a.username && a.username.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchesFilter =
       filterTab === 'all' ||
       (filterTab === 'active' && !a.disabled) ||
       (filterTab === 'disabled' && a.disabled) ||
-      a.tags.includes(filterTab);
+      (a.tags && a.tags.includes(filterTab));
     return matchesSearch && matchesFilter;
   });
+
+  // åˆ†é¡µè®¡ç®—
+  const totalPages = Math.max(1, Math.ceil(filteredAccounts.length / pageSize));
+  const paginatedAccounts = filteredAccounts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const handleAddAccount = async () => {
     try {
@@ -40,7 +46,7 @@ export default function Accounts() {
         const fp = await window.electronAPI?.generateFingerprint();
         const newAccount: Account = {
           id: crypto.randomUUID(),
-          email: result.data.email || result.data.user_id || 'ĞÂÕËºÅ',
+          email: result.data.email || result.data.user_id || 'æ–°è´¦å·',
           label: '',
           token: result.data.token || '',
           refreshToken: result.data.refresh_token || '',
@@ -78,13 +84,15 @@ export default function Accounts() {
             token: result.data.token || existing.token,
             refreshToken: result.data.refreshToken || existing.refreshToken,
             expiredAt: result.data.expiredAt || existing.expiredAt,
+            lastUsed: new Date().toISOString(),
           });
+          alert('å·²æˆåŠŸåŒæ­¥æœ¬åœ° Trae CN æœ€æ–°å‡­æ®');
         } else {
           const fp = await window.electronAPI?.generateFingerprint();
           const newAccount: Account = {
             id: crypto.randomUUID(),
-            email: result.data.username || '±¾µØÕËºÅ',
-            label: '´Ó±¾µØµ¼Èë',
+            email: result.data.username || 'æœ¬åœ°è´¦å·',
+            label: 'ä»æœ¬åœ°å¯¼å…¥',
             token: result.data.token || '',
             refreshToken: result.data.refreshToken || '',
             userId: result.data.userId || '',
@@ -102,13 +110,16 @@ export default function Accounts() {
             fingerprintHistory: fp ? [fp] : [],
             lastUsed: new Date().toISOString(),
             createdAt: new Date().toISOString(),
-            tags: ['±¾µØ'],
+            tags: ['æœ¬åœ°'],
           };
           addAccount(newAccount);
+          alert('æˆåŠŸä»æœ¬åœ° Trae è¯»å–å¹¶åˆ›å»ºæ–°è´¦å·');
         }
+      } else {
+        alert(result?.error || 'æœªåœ¨æœ¬åœ°æ‰¾åˆ° Trae ç™»å½•å‡­è¯');
       }
-    } catch (e) {
-      console.error('Read local failed:', e);
+    } catch (e: any) {
+      alert('è¯»å–æœ¬åœ°å‡­æ®é‡åˆ°é”™è¯¯: ' + e?.message);
     }
   };
 
@@ -120,8 +131,8 @@ export default function Accounts() {
 
   const maskSecret = (secret?: string) => {
     if (!secret) return secret;
-    if (secret.length <= 10) return '*** (ÒÑÍÑÃô)';
-    return `${secret.slice(0, 6)}***${secret.slice(-4)} (ÒÑÍÑÃô±£»¤)`;
+    if (secret.length <= 10) return '*** (å·²è„±æ•)';
+    return `${secret.slice(0, 6)}***${secret.slice(-4)} (å·²è„±æ•ä¿æŠ¤)`;
   };
 
   const sanitizeAccountForExport = (acc: any) => ({
@@ -136,14 +147,15 @@ export default function Accounts() {
         const res = await window.electronAPI.importAccounts();
         if (res.canceled) return;
         if (!res.success || !res.data) {
-          alert('µ¼ÈëÊ§°Ü: ' + (res.error || 'Î´ÄÜ½âÎöÕËºÅÊı¾İ'));
+          alert('å¯¼å…¥å¤±è´¥: ' + (res.error || 'æœªèƒ½è§£æè´¦å·æ•°æ®'));
           return;
         }
-        const imported = Array.isArray(res.data) ? res.data : [res.data];
+        const dataArr = res.data.accounts || (Array.isArray(res.data) ? res.data : [res.data]);
         let addedCount = 0;
-        imported.forEach((acc: any) => {
+        dataArr.forEach((acc: any) => {
           if (acc && (acc.email || acc.userId || acc.token)) {
             addAccount({
+              id: crypto.randomUUID(),
               email: acc.email || `imported_${Date.now()}`,
               token: acc.token || '',
               refreshToken: acc.refreshToken || '',
@@ -151,19 +163,29 @@ export default function Accounts() {
               username: acc.username || '',
               region: acc.region || '',
               aiRegion: acc.aiRegion || '',
-              label: acc.label || 'imported',
-              tags: acc.tags || [],
-              disabled: false,
+              label: acc.label || 'å¯¼å…¥è´¦å·',
+              tags: acc.tags || ['å¯¼å…¥'],
+              disabled: Boolean(acc.disabled),
+              isPro: Boolean(acc.isPro),
+              isCurrent: false,
+              fingerprint: acc.fingerprint || null,
+              fingerprintHistory: acc.fingerprintHistory || [],
+              lastUsed: acc.lastUsed || new Date().toISOString(),
+              createdAt: new Date().toISOString(),
+              host: acc.host || '',
+              expiredAt: acc.expiredAt || '',
+              refreshExpiredAt: acc.refreshExpiredAt || '',
+              scope: acc.scope || 'personal',
             });
             addedCount++;
           }
         });
-        alert(`³É¹¦µ¼Èë ${addedCount} ¸öÕËºÅÅäÖÃ`);
+        alert(`æˆåŠŸå¯¼å…¥ ${addedCount} ä¸ªè´¦å·é…ç½®`);
       } else {
-        alert('µ±Ç°»·¾³²»Ö§³Ö±¾µØÎÄ¼şµ¼Èë');
+        alert('å½“å‰ç¯å¢ƒä¸æ”¯æŒæœ¬åœ°æ–‡ä»¶å¯¼å…¥');
       }
     } catch (e: any) {
-      alert('µ¼ÈëÊ§°Ü: ' + e.message);
+      alert('å¯¼å…¥å¤±è´¥: ' + e?.message);
     }
   };
 
@@ -172,11 +194,11 @@ export default function Accounts() {
     const defaultFileName = `traecn-accounts-sanitized-${new Date().toISOString().slice(0, 10)}.json`;
 
     if (window.electronAPI?.exportAccounts) {
-      const res = await window.electronAPI.exportAccounts(sanitized, defaultFileName);
+      const res = await window.electronAPI.exportAccounts({ data: sanitized, defaultFileName });
       if (!res.canceled && res.success) {
-        alert('ÍÑÃôĞÅÏ¢µ¼³ö³É¹¦');
+        alert('è„±æ•ä¿¡æ¯å¯¼å‡ºæˆåŠŸ: ' + res.filePath);
       } else if (res.error) {
-        alert('µ¼³öÊ§°Ü: ' + res.error);
+        alert('å¯¼å‡ºå¤±è´¥: ' + res.error);
       }
       return;
     }
@@ -196,11 +218,11 @@ export default function Accounts() {
     const defaultFileName = `${acc.email || acc.id}-sanitized.json`;
 
     if (window.electronAPI?.exportAccounts) {
-      const res = await window.electronAPI.exportAccounts(sanitized, defaultFileName);
+      const res = await window.electronAPI.exportAccounts({ data: sanitized, defaultFileName });
       if (!res.canceled && res.success) {
-        alert(`ÕËºÅ ${acc.email || acc.id} ÍÑÃôĞÅÏ¢µ¼³ö³É¹¦`);
+        alert(`è´¦å· ${acc.email || acc.id} è„±æ•ä¿¡æ¯å¯¼å‡ºæˆåŠŸ: ${res.filePath}`);
       } else if (res.error) {
-        alert('µ¼³öÊ§°Ü: ' + res.error);
+        alert('å¯¼å‡ºå¤±è´¥: ' + res.error);
       }
       return;
     }
@@ -215,7 +237,7 @@ export default function Accounts() {
     URL.revokeObjectURL(url);
   };
 
-  const allTags = [...new Set(accounts.flatMap(a => a.tags))];
+  const allTags = [...new Set(accounts.flatMap(a => a.tags || []))];
 
   return (
     <div className="p-6 space-y-4 max-w-7xl">
@@ -226,9 +248,9 @@ export default function Accounts() {
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400" />
           <input
             type="text"
-            placeholder="ËÑË÷ÓÊÏä..."
+            placeholder="æœç´¢é‚®ç®±æˆ–æ˜µç§°..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }}
             className="w-full pl-9 pr-3 py-2 bg-dark-800 border border-dark-600 rounded-lg text-sm text-dark-200 placeholder:text-dark-500 focus:outline-none focus:border-blue-500"
           />
         </div>
@@ -247,38 +269,49 @@ export default function Accounts() {
 
         {/* Filter tabs */}
         <div className="flex items-center gap-1.5">
-          <FilterBadge label="È«²¿" count={accounts.length} active={filterTab === 'all'} onClick={() => setFilterTab('all')} color="green" />
-          <FilterBadge label="»îÔ¾" count={accounts.filter(a => !a.disabled).length} active={filterTab === 'active'} onClick={() => setFilterTab('active')} color="blue" />
-          <FilterBadge label="ÒÑ½ûÓÃ" count={accounts.filter(a => a.disabled).length} active={filterTab === 'disabled'} onClick={() => setFilterTab('disabled')} color="red" />
+          <FilterBadge label="å…¨éƒ¨" count={accounts.length} active={filterTab === 'all'} onClick={() => { setFilterTab('all'); setCurrentPage(1); }} color="green" />
+          <FilterBadge label="æ´»è·ƒ" count={accounts.filter(a => !a.disabled).length} active={filterTab === 'active'} onClick={() => { setFilterTab('active'); setCurrentPage(1); }} color="blue" />
+          <FilterBadge label="å·²ç¦ç”¨" count={accounts.filter(a => a.disabled).length} active={filterTab === 'disabled'} onClick={() => { setFilterTab('disabled'); setCurrentPage(1); }} color="red" />
           {allTags.map(tag => (
-            <FilterBadge key={tag} label={tag} count={accounts.filter(a => a.tags.includes(tag)).length}
-              active={filterTab === tag} onClick={() => setFilterTab(tag)} color="purple" />
+            <FilterBadge key={tag} label={tag} count={accounts.filter(a => (a.tags || []).includes(tag)).length}
+              active={filterTab === tag} onClick={() => { setFilterTab(tag); setCurrentPage(1); }} color="purple" />
           ))}
         </div>
 
         <div className="flex-1" />
 
         {/* Actions */}
-        <button onClick={handleAddAccount}
-          className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors">
+        <button
+          onClick={handleAddAccount}
+          className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors text-white"
+          title="OAuth æ·»åŠ æ–°è´¦å·"
+        >
           <Plus size={16} />
+          æ·»åŠ è´¦å·
         </button>
-        <button onClick={handleReadLocal}
-          className="flex items-center gap-1.5 px-3 py-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm transition-colors"
-          title="´Ó±¾µØ Trae CN ¶ÁÈ¡">
+        <button
+          onClick={handleReadLocal}
+          className="flex items-center gap-1.5 px-3 py-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm transition-colors text-dark-200"
+          title="ä»æœ¬åœ°å·²å®‰è£…çš„ Trae CN å‡­è¯è¯»å–"
+        >
           <RefreshCw size={16} />
+          ä»æœ¬åœ°åŒæ­¥
         </button>
-        <button onClick={handleImport}
-          className="flex items-center gap-1.5 px-3 py-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm transition-colors"
-          title="µ¼ÈëÕËºÅÅäÖÃÎÄ¼ş">
+        <button
+          onClick={handleImport}
+          className="flex items-center gap-1.5 px-3 py-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm transition-colors text-dark-200"
+          title="å¯¼å…¥ JSON é…ç½®æ–‡ä»¶"
+        >
           <Upload size={16} />
-          µ¼Èë
+          å¯¼å…¥
         </button>
-        <button onClick={handleExport}
-          className="flex items-center gap-1.5 px-3 py-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm transition-colors"
-          title="µ¼³ö">
+        <button
+          onClick={handleExport}
+          className="flex items-center gap-1.5 px-3 py-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm transition-colors text-dark-200"
+          title="å¯¼å‡ºè´¦å·è„±æ•æ•°æ®"
+        >
           <Download size={16} />
-          µ¼³ö
+          å¯¼å‡º
         </button>
       </div>
 
@@ -288,85 +321,92 @@ export default function Accounts() {
           {/* Table Header */}
           <div className="grid grid-cols-[40px_1fr_1fr_150px_180px] gap-4 px-4 py-3 bg-dark-800/50 border-b border-dark-700/50 text-xs text-dark-400 uppercase tracking-wide">
             <div />
-            <div>ÓÊÏä</div>
-            <div>Ä£ĞÍ×´Ì¬</div>
-            <div>×îºóÊ¹ÓÃ</div>
-            <div className="text-right">²Ù×÷</div>
+            <div>é‚®ç®±ä¸èº«ä»½</div>
+            <div>æ¨¡å‹çŠ¶æ€</div>
+            <div>æœ€åä½¿ç”¨</div>
+            <div className="text-right">æ“ä½œ</div>
           </div>
 
           {/* Table Body */}
-          {filteredAccounts.length === 0 ? (
+          {paginatedAccounts.length === 0 ? (
             <div className="text-center py-12 text-dark-400">
-              ÔİÎŞÕËºÅ£¬µã»÷ + Ìí¼Ó
+              æš‚æ— è´¦å·ï¼Œç‚¹å‡»å³ä¸Šè§’ã€Œæ·»åŠ è´¦å·ã€æˆ–ã€Œä»æœ¬åœ°åŒæ­¥ã€å¯¼å…¥
             </div>
           ) : (
-            filteredAccounts.map((account) => (
-              <div key={account.id}
-                className="grid grid-cols-[40px_1fr_1fr_150px_180px] gap-4 px-4 py-3 border-b border-dark-700/30 hover:bg-dark-800/30 transition-colors items-center group">
-                {/* Drag + Select */}
-                <div className="flex items-center gap-1">
-                  <GripVertical size={14} className="text-dark-600 cursor-grab opacity-0 group-hover:opacity-100" />
+            paginatedAccounts.map((account) => (
+              <div
+                key={account.id}
+                className="grid grid-cols-[40px_1fr_1fr_150px_180px] gap-4 items-center px-4 py-3 hover:bg-dark-800/50 transition-colors group border-b border-dark-700/30 last:border-b-0"
+              >
+                {/* Current Indicator */}
+                <div className="flex justify-center">
+                  {account.isCurrent ? (
+                    <div className="w-2.5 h-2.5 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]" title="å½“å‰ç”Ÿæ•ˆè´¦å·" />
+                  ) : (
+                    <div className="w-2.5 h-2.5 rounded-full bg-dark-600" />
+                  )}
                 </div>
 
-                {/* Email + Tags */}
-                <div className="flex flex-col gap-1.5 min-w-0">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="font-medium text-dark-200 truncate">{account.email}</span>
+                {/* Email & Label */}
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center text-xs font-bold text-white shrink-0">
+                    {(account.email[0] || 'A').toUpperCase()}
                   </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {account.isCurrent && (
-                      <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs">µ±Ç°</span>
-                    )}
-                    {account.isPro && (
-                      <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-300 rounded text-xs">¡ô PRO</span>
-                    )}
-                    {account.disabled && (
-                      <span className="px-1.5 py-0.5 bg-red-500/20 text-red-400 rounded text-xs">? ·´´úÒÑ½ûÓÃ</span>
-                    )}
-                    {!account.disabled && (
-                      <span className="px-1.5 py-0.5 bg-dark-600 text-dark-300 rounded text-xs">¡ğ FREE</span>
-                    )}
-                    {account.tags.map(tag => (
-                      <span key={tag} className="px-1.5 py-0.5 bg-orange-500/20 text-orange-400 rounded text-xs">{tag}</span>
-                    ))}
-                    {/* Editable label */}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-medium text-dark-200 truncate">{account.email}</span>
+                      {account.isPro && (
+                        <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded text-[10px] font-semibold shrink-0">
+                          PRO
+                        </span>
+                      )}
+                      {account.disabled && (
+                        <span className="px-1.5 py-0.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded text-[10px] shrink-0">
+                          å·²ç¦ç”¨
+                        </span>
+                      )}
+                    </div>
                     {editingLabel === account.id ? (
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 mt-0.5">
                         <input
-                          type="text"
                           value={labelInput}
                           onChange={(e) => setLabelInput(e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleLabelSave(account.id)}
-                          placeholder="ÊäÈë×Ô¶¨Òå±êÇ©"
-                          className="px-1.5 py-0.5 bg-dark-700 border border-orange-500/50 rounded text-xs w-28 focus:outline-none focus:border-orange-400"
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleLabelSave(account.id); }}
+                          className="px-1.5 py-0.5 bg-dark-700 border border-orange-500/50 rounded text-xs w-28 focus:outline-none focus:border-orange-400 text-white"
                           autoFocus
                         />
-                        <button onClick={() => handleLabelSave(account.id)}
-                          className="text-green-400 hover:text-green-300">
+                        <button onClick={() => handleLabelSave(account.id)} className="text-green-400 hover:text-green-300">
                           <Check size={12} />
                         </button>
-                        <button onClick={() => setEditingLabel(null)}
-                          className="text-dark-400 hover:text-dark-300">
+                        <button onClick={() => setEditingLabel(null)} className="text-dark-400 hover:text-dark-300">
                           <X size={12} />
                         </button>
                       </div>
                     ) : (
                       account.label && (
-                        <span className="px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded text-xs">{account.label}</span>
+                        <span className="inline-block px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded text-xs mt-0.5">
+                          {account.label}
+                        </span>
                       )
                     )}
                   </div>
                 </div>
 
-                {/* Model Status */}
+                {/* Model Status (A7: çœŸå®çŠ¶æ€æŒ‡ç¤º) */}
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-green-400 text-xs">?</span>
-                    <span className="text-xs text-dark-300">È«²¿Ä£ĞÍ</span>
-                    <span className="text-xs text-green-400 font-medium">¿ÉÓÃ</span>
+                    <span className={`text-xs ${account.disabled ? 'text-red-400' : 'text-green-400'}`}>
+                      â—
+                    </span>
+                    <span className="text-xs text-dark-300">å…¨éƒ¨æ¨¡å‹</span>
+                    <span className={`text-xs font-medium ${account.disabled ? 'text-red-400' : 'text-green-400'}`}>
+                      {account.disabled ? 'åä»£å·²ç¦ç”¨' : 'é€šé“å°±ç»ª'}
+                    </span>
                   </div>
                   <div className="h-1.5 w-full bg-dark-700 rounded-full overflow-hidden">
-                    <div className="h-full w-full bg-green-500 rounded-full" />
+                    <div className={`h-full w-full rounded-full transition-all ${
+                      account.disabled ? 'bg-red-500/60' : 'bg-green-500'
+                    }`} />
                   </div>
                 </div>
 
@@ -375,56 +415,107 @@ export default function Accounts() {
                   {account.lastUsed ? new Date(account.lastUsed).toLocaleDateString('zh-CN') : '-'}
                 </div>
 
-                {/* Actions */}
+                {/* Actions (A1-A3: æ¸…ç†å‡é¢„çƒ­/å‡è¯¦æƒ…ï¼Œåˆ·æ–°ç»‘å®šçœŸå®åŠ¨ä½œ) */}
                 <div className="flex items-center gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                  <ActionButton icon={<RefreshCw size={14} />} title="Ë¢ĞÂ" onClick={() => {}} />
-                  <ActionButton icon={<Fingerprint size={14} />} title="Éè±¸Ö¸ÎÆ" onClick={() => setShowFingerprintModal(account.id)} />
-                  <ActionButton icon={<Tag size={14} />} title="±à¼­±êÇ©"
-                    onClick={() => { setEditingLabel(account.id); setLabelInput(account.label); }} />
-                  <ActionButton icon={<ArrowRightLeft size={14} />} title="ÇĞ»»µ½´ËÕËºÅ" onClick={() => switchAccount(account.id)} />
-                  <ActionButton icon={<Flame size={14} />} title="Ô¤ÈÈ" onClick={() => {}} />
-                  <ActionButton icon={<Download size={14} />} title="µ¼³öÍÑÃôĞÅÏ¢" onClick={() => handleExportSingle(account)} />
-                  <ActionButton icon={<Eye size={14} />} title="ÏêÇé" onClick={() => {}} />
-                  <ActionButton icon={<Ban size={14} />} title={account.disabled ? 'ÆôÓÃ·´´ú' : '½ûÓÃ·´´ú'}
+                  <ActionButton
+                    icon={<RefreshCw size={14} />}
+                    title="åˆ·æ–°ä½¿ç”¨æ—¶é—´"
+                    onClick={() => {
+                      updateAccount(account.id, { lastUsed: new Date().toISOString() });
+                    }}
+                  />
+                  <ActionButton
+                    icon={<Fingerprint size={14} />}
+                    title="è®¾å¤‡æŒ‡çº¹"
+                    onClick={() => setShowFingerprintModal(account.id)}
+                  />
+                  <ActionButton
+                    icon={<Tag size={14} />}
+                    title="ç¼–è¾‘æ ‡ç­¾"
+                    onClick={() => { setEditingLabel(account.id); setLabelInput(account.label || ''); }}
+                  />
+                  <ActionButton
+                    icon={<ArrowRightLeft size={14} />}
+                    title="åˆ‡æ¢åˆ°æ­¤è´¦å·"
+                    onClick={() => switchAccount(account.id)}
+                    className={account.isCurrent ? 'text-green-400' : ''}
+                  />
+                  <ActionButton
+                    icon={<Download size={14} />}
+                    title="å¯¼å‡ºè„±æ•ä¿¡æ¯"
+                    onClick={() => handleExportSingle(account)}
+                  />
+                  <ActionButton
+                    icon={<Ban size={14} />}
+                    title={account.disabled ? 'å¯ç”¨åä»£' : 'ç¦ç”¨åä»£'}
                     onClick={() => setAccountDisabled(account.id, !account.disabled)}
-                    className={account.disabled ? 'text-red-400' : ''} />
-                  <ActionButton icon={<Trash2 size={14} />} title="É¾³ı"
-                    onClick={() => { if (confirm('È·¶¨ÒªÉ¾³ı´ËÕËºÅ£¿')) removeAccount(account.id); }}
-                    className="text-red-400 hover:!bg-red-500/20" />
+                    className={account.disabled ? 'text-red-400' : ''}
+                  />
+                  <ActionButton
+                    icon={<Trash2 size={14} />}
+                    title="åˆ é™¤"
+                    onClick={() => { if (confirm(`ç¡®å®šè¦åˆ é™¤è´¦å· ${account.email} å—ï¼Ÿ`)) removeAccount(account.id); }}
+                    className="text-red-400 hover:!bg-red-500/20"
+                  />
                 </div>
               </div>
             ))
           )}
         </div>
       ) : (
-        /* Grid View */
+        /* Grid View (A4: å¡ç‰‡è§†å›¾çœŸå®äº¤äº’) */
         <div className="grid grid-cols-3 gap-4">
-          {filteredAccounts.map((account) => (
-            <div key={account.id} className="bg-dark-800/50 border border-dark-700/50 rounded-xl p-4 card-hover">
+          {paginatedAccounts.map((account) => (
+            <div
+              key={account.id}
+              className={`bg-dark-800/50 border rounded-xl p-4 card-hover transition-colors ${
+                account.isCurrent ? 'border-green-500/50 shadow-[0_0_15px_rgba(74,222,128,0.1)]' : 'border-dark-700/50'
+              }`}
+            >
               <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center text-sm font-bold">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center text-sm font-bold text-white shrink-0">
                     {(account.email[0] || 'A').toUpperCase()}
                   </div>
                   <div className="min-w-0">
                     <div className="text-sm font-medium text-dark-200 truncate">{account.email}</div>
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      {account.isPro && <span className="text-xs text-blue-400">PRO</span>}
-                      {account.disabled && <span className="text-xs text-red-400">ÒÑ½ûÓÃ</span>}
+                      {account.isPro && <span className="text-xs text-blue-400 font-semibold">PRO</span>}
+                      {account.disabled && <span className="text-xs text-red-400">å·²ç¦ç”¨</span>}
+                      {account.isCurrent && <span className="text-xs text-green-400 font-medium">â— ç”Ÿæ•ˆä¸­</span>}
                     </div>
                   </div>
                 </div>
-                <button className="p-1 hover:bg-dark-600 rounded transition-colors">
-                  <MoreHorizontal size={14} className="text-dark-400" />
-                </button>
+
+                {/* å¡ç‰‡å¿«é€Ÿåˆ‡æ¢æˆ–åˆ é™¤ */}
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => switchAccount(account.id)}
+                    title={account.isCurrent ? 'å½“å‰å·²ç”Ÿæ•ˆ' : 'åˆ‡æ¢åˆ°è¯¥è´¦å·'}
+                    disabled={account.isCurrent}
+                    className="p-1 hover:bg-dark-600 rounded transition-colors text-dark-300 hover:text-white disabled:opacity-40"
+                  >
+                    <ArrowRightLeft size={14} />
+                  </button>
+                  <button
+                    onClick={() => { if (confirm(`ç¡®å®šè¦åˆ é™¤æ­¤è´¦å·ï¼Ÿ`)) removeAccount(account.id); }}
+                    title="åˆ é™¤è´¦å·"
+                    className="p-1 hover:bg-red-500/20 rounded transition-colors text-dark-400 hover:text-red-400"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
+
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-dark-400">Ä£ĞÍ×´Ì¬</span>
-                  <span className="text-green-400">È«²¿¿ÉÓÃ</span>
+                  <span className="text-dark-400">æ¨¡å‹çŠ¶æ€</span>
+                  <span className={account.disabled ? 'text-red-400' : 'text-green-400'}>
+                    {account.disabled ? 'å·²ç¦ç”¨' : 'å…¨éƒ¨å¯ç”¨'}
+                  </span>
                 </div>
                 <div className="h-1.5 bg-dark-700 rounded-full overflow-hidden">
-                  <div className="h-full w-full bg-green-500 rounded-full" />
+                  <div className={`h-full w-full rounded-full ${account.disabled ? 'bg-red-500/60' : 'bg-green-500'}`} />
                 </div>
               </div>
             </div>
@@ -432,22 +523,53 @@ export default function Accounts() {
         </div>
       )}
 
-      {/* Pagination */}
+      {/* Pagination (A6: çœŸå®åˆ†é¡µè”åŠ¨) */}
       {filteredAccounts.length > 0 && (
-        <div className="flex items-center justify-between text-xs text-dark-400">
-          <span>ÏÔÊ¾µÚ 1 µ½ {filteredAccounts.length} Ìõ£¬¹² {filteredAccounts.length} Ìõ</span>
-          <div className="flex items-center gap-2">
-            <span>Ã¿Ò³</span>
-            <select className="bg-dark-800 border border-dark-600 rounded px-2 py-1 text-dark-300">
-              <option>10 Ìõ</option>
-              <option>25 Ìõ</option>
-              <option>50 Ìõ</option>
-            </select>
+        <div className="flex items-center justify-between text-xs text-dark-400 pt-2">
+          <span>
+            æ˜¾ç¤ºç¬¬ {(currentPage - 1) * pageSize + 1} åˆ° {Math.min(currentPage * pageSize, filteredAccounts.length)} æ¡ï¼Œ
+            å…± {filteredAccounts.length} æ¡è®°å½•
+          </span>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span>æ¯é¡µæ˜¾ç¤º</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="bg-dark-800 border border-dark-600 rounded px-2 py-1 text-dark-300 focus:outline-none"
+              >
+                <option value={10}>10 æ¡</option>
+                <option value={25}>25 æ¡</option>
+                <option value={50}>50 æ¡</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage <= 1}
+                className="p-1.5 bg-dark-800 hover:bg-dark-700 disabled:opacity-40 rounded transition-colors"
+                title="ä¸Šä¸€é¡µ"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span className="px-2">{currentPage} / {totalPages}</span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                className="p-1.5 bg-dark-800 hover:bg-dark-700 disabled:opacity-40 rounded transition-colors"
+                title="ä¸‹ä¸€é¡µ"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Fingerprint Modal */}
+      {/* Fingerprint Modal (A5: æ¢å¤åŸå§‹ç»‘å®š) */}
       {showFingerprintModal && (
         <FingerprintModal
           account={accounts.find(a => a.id === showFingerprintModal)!}
@@ -490,14 +612,21 @@ function ActionButton({ icon, title, onClick, className = '' }: {
   icon: React.ReactNode; title: string; onClick: () => void; className?: string;
 }) {
   return (
-    <button onClick={onClick} title={title}
-      className={`p-1.5 hover:bg-dark-600 rounded transition-colors text-dark-400 hover:text-dark-200 ${className}`}>
+    <button
+      onClick={onClick}
+      title={title}
+      className={`p-1.5 hover:bg-dark-700 rounded-lg text-dark-400 hover:text-dark-200 transition-colors ${className}`}
+    >
       {icon}
     </button>
   );
 }
 
-function FingerprintModal({ account, onClose, onUpdate }: {
+function FingerprintModal({
+  account,
+  onClose,
+  onUpdate,
+}: {
   account: Account;
   onClose: () => void;
   onUpdate: (fp: DeviceFingerprint) => void;
@@ -514,8 +643,16 @@ function FingerprintModal({ account, onClose, onUpdate }: {
     }
   };
 
-  const handleRestore = (fp: DeviceFingerprint) => {
-    onUpdate(fp);
+  // A5: æ¢å¤åŸå§‹é€»è¾‘
+  const handleRestoreOriginal = () => {
+    if (account.fingerprintHistory && account.fingerprintHistory.length > 0) {
+      onUpdate(account.fingerprintHistory[0]);
+      alert('å·²æˆåŠŸæ¢å¤åˆ°åˆå§‹è®°å½•çš„è®¾å¤‡æŒ‡çº¹');
+    } else if (account.fingerprint) {
+      alert('å½“å‰æŒ‡çº¹å·²æ˜¯å”¯ä¸€çš„åˆå§‹æŒ‡çº¹');
+    } else {
+      handleGenerate();
+    }
   };
 
   const handleOpenDir = async () => {
@@ -532,7 +669,7 @@ function FingerprintModal({ account, onClose, onUpdate }: {
         <div className="flex items-center justify-between px-6 py-4 border-b border-dark-700/50">
           <div className="flex items-center gap-3">
             <Fingerprint size={20} className="text-blue-400" />
-            <h2 className="text-lg font-semibold">Éè±¸Ö¸ÎÆ</h2>
+            <h2 className="text-lg font-semibold">è®¾å¤‡æŒ‡çº¹</h2>
             <span className="px-2 py-0.5 bg-dark-700 text-dark-300 rounded-lg text-xs">{account.email}</span>
           </div>
           <button onClick={onClose} className="p-1 hover:bg-dark-600 rounded-lg transition-colors">
@@ -543,18 +680,21 @@ function FingerprintModal({ account, onClose, onUpdate }: {
         <div className="p-6 space-y-6">
           {/* Actions */}
           <div className="flex items-center gap-3">
-            <h3 className="text-sm font-semibold text-dark-200">Éè±¸Ö¸ÎÆ²Ù×÷</h3>
+            <h3 className="text-sm font-semibold text-dark-200">è®¾å¤‡æŒ‡çº¹æ“ä½œ</h3>
             <div className="flex-1" />
             <button onClick={handleGenerate} disabled={generating}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs transition-colors disabled:opacity-50">
-              ?? Éú³É²¢°ó¶¨
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs transition-colors disabled:opacity-50 text-white">
+              âš¡ ç”Ÿæˆå¹¶ç»‘å®š
             </button>
-            <button className="flex items-center gap-1.5 px-3 py-1.5 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-xs transition-colors">
-              ¡ó »Ö¸´Ô­Ê¼
+            <button
+              onClick={handleRestoreOriginal}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-xs transition-colors text-dark-200"
+            >
+              â—‡ æ¢å¤åŸå§‹
             </button>
             <button onClick={handleOpenDir}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-xs transition-colors">
-              ? ´ò¿ª´¢´æÄ¿Â¼
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-xs transition-colors text-dark-200">
+              ğŸ“ æ‰“å¼€å‚¨å­˜ç›®å½•
             </button>
           </div>
 
@@ -563,60 +703,51 @@ function FingerprintModal({ account, onClose, onUpdate }: {
             {/* Current Storage */}
             <div className="bg-dark-900/50 border border-dark-700/50 rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-medium">µ±Ç°´æ´¢</h4>
-                <span className="px-2 py-0.5 bg-green-500/20 text-green-400 rounded text-xs">ÒÑÉúĞ§</span>
+                <h4 className="text-sm font-medium">å½“å‰å­˜å‚¨</h4>
+                <span className="px-2 py-0.5 bg-green-500/20 text-green-400 rounded text-xs">å·²ç”Ÿæ•ˆ</span>
               </div>
-              <p className="text-xs text-dark-500 mb-3">¶ÁÈ¡×Ô storage.json£¨ÇĞ»»ÕËºÅÊ±Ó¦ÓÃ°ó¶¨ºó¸üĞÂ£©</p>
+              <p className="text-xs text-dark-500 mb-3">è¯»å–è‡ª storage.jsonï¼ˆåˆ‡æ¢è´¦å·æ—¶åº”ç”¨ç»‘å®šåæ›´æ–°ï¼‰</p>
               {fp ? (
                 <FingerprintDetails fp={fp} />
               ) : (
-                <p className="text-xs text-dark-500">ÔİÎŞÖ¸ÎÆÊı¾İ</p>
+                <p className="text-xs text-dark-500">æš‚æ— æŒ‡çº¹æ•°æ®</p>
               )}
             </div>
 
             {/* Account Bound */}
             <div className="bg-dark-900/50 border border-dark-700/50 rounded-xl p-4">
               <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-medium">ÕËºÅ°ó¶¨</h4>
-                <span className="px-2 py-0.5 bg-orange-500/20 text-orange-400 rounded text-xs">´ıÓ¦ÓÃ</span>
+                <h4 className="text-sm font-medium">è´¦å·ç»‘å®š</h4>
+                <span className="px-2 py-0.5 bg-orange-500/20 text-orange-400 rounded text-xs">å¾…åº”ç”¨</span>
               </div>
-              <p className="text-xs text-dark-500 mb-3">Éú³É/»Ö¸´ºó±£´æÎª°ó¶¨£¬ÇĞ»»ÕËºÅÊ±Ğ´Èë storage.json</p>
+              <p className="text-xs text-dark-500 mb-3">ç”Ÿæˆ/æ¢å¤åä¿å­˜ä¸ºç»‘å®šï¼Œåˆ‡æ¢è´¦å·æ—¶å†™å…¥ storage.json</p>
               {fp ? (
                 <FingerprintDetails fp={fp} />
               ) : (
-                <p className="text-xs text-dark-500">ÔİÎŞ°ó¶¨Êı¾İ</p>
+                <p className="text-xs text-dark-500">æš‚æ— ç»‘å®šæ•°æ®</p>
               )}
             </div>
           </div>
 
           {/* History */}
           <div>
-            <h3 className="text-sm font-semibold text-dark-200 mb-3">ÀúÊ·Ö¸ÎÆ£¨¿ÉÑ¡»Ö¸´/É¾³ı£©</h3>
+            <h3 className="text-sm font-semibold text-dark-200 mb-3">å†å²æŒ‡çº¹è®°å½•</h3>
             {(account.fingerprintHistory || []).length === 0 ? (
-              <p className="text-xs text-dark-500">ÔİÎŞÀúÊ·¼ÇÂ¼</p>
+              <p className="text-xs text-dark-500">æš‚æ— å†å²è®°å½•</p>
             ) : (
               <div className="space-y-3">
                 {account.fingerprintHistory.map((hist, idx) => (
                   <div key={idx} className="bg-dark-900/50 border border-dark-700/50 rounded-lg p-3">
                     <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-medium text-dark-300">{hist.label}</span>
-                        {idx === account.fingerprintHistory.length - 1 && (
-                          <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs">µ±Ç°</span>
-                        )}
-                      </div>
-                      <button onClick={() => handleRestore(hist)}
-                        className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
-                        »Ö¸´
+                      <span className="text-xs text-dark-400 font-mono">#{idx + 1}</span>
+                      <button
+                        onClick={() => { onUpdate(hist); alert('å·²åº”ç”¨æ­¤å†å²æŒ‡çº¹'); }}
+                        className="text-xs text-blue-400 hover:underline"
+                      >
+                        åº”ç”¨æ­¤æŒ‡çº¹
                       </button>
                     </div>
-                    <div className="text-xs text-dark-500 mb-1">{new Date(hist.createdAt).toLocaleString('zh-CN')}</div>
-                    <div className="text-xs text-dark-500 font-mono space-y-0.5">
-                      <div>machineId: {hist.machineId}</div>
-                      <div>macMachineId: {hist.macMachineId}</div>
-                      <div>devDeviceId: {hist.devDeviceId}</div>
-                      <div>sqmId: {hist.sqmId}</div>
-                    </div>
+                    <FingerprintDetails fp={hist} />
                   </div>
                 ))}
               </div>
@@ -630,31 +761,19 @@ function FingerprintModal({ account, onClose, onUpdate }: {
 
 function FingerprintDetails({ fp }: { fp: DeviceFingerprint }) {
   return (
-    <div className="space-y-2">
-      <FpField label="machineId" value={fp.machineId} />
-      <FpField label="macMachineId" value={fp.macMachineId} />
-      <FpField label="devDeviceId" value={fp.devDeviceId} />
-      <FpField label="sqmId" value={fp.sqmId} />
-    </div>
-  );
-}
-
-function FpField({ label, value }: { label: string; value: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-
-  return (
-    <div className="flex items-start gap-2">
-      <span className="text-xs font-semibold text-dark-400 w-24 shrink-0">{label}:</span>
-      <span className="text-xs text-dark-300 font-mono break-all flex-1">{value}</span>
-      <button onClick={handleCopy} className="text-dark-500 hover:text-dark-300 shrink-0" title="¸´ÖÆ">
-        {copied ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
-      </button>
+    <div className="space-y-1.5 text-xs font-mono">
+      <div className="flex justify-between">
+        <span className="text-dark-500">Device ID:</span>
+        <span className="text-dark-300 truncate max-w-[200px]" title={fp.deviceId}>{fp.deviceId ? `${fp.deviceId.slice(0, 16)}...` : '-'}</span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-dark-500">Machine ID:</span>
+        <span className="text-dark-300 truncate max-w-[200px]" title={fp.machineId}>{fp.machineId ? `${fp.machineId.slice(0, 16)}...` : '-'}</span>
+      </div>
+      <div className="flex justify-between">
+        <span className="text-dark-500">MAC:</span>
+        <span className="text-dark-300">{fp.macAddress || '-'}</span>
+      </div>
     </div>
   );
 }

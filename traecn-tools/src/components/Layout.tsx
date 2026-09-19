@@ -2,18 +2,15 @@ import React from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Network, ScrollText,
-  BarChart3, Key, Globe, Settings, Minus, Square, X,
+  Settings, Minus, Square, X,
 } from 'lucide-react';
 
 const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'ÒÇ±íÅÌ' },
-  { to: '/accounts', icon: Users, label: 'ÕËºÅ¹ÜÀí' },
-  { to: '/proxy', icon: Network, label: 'API ·´´ú' },
-  { to: '/logs', icon: ScrollText, label: 'Á÷Á¿ÈÕÖ¾' },
-  { to: '/stats', icon: BarChart3, label: 'Token Í³¼Æ' },
-  { to: '/tokens', icon: Key, label: 'ÓÃ»§ Token' },
-  { to: '/ip', icon: Globe, label: 'IP ¹ÜÀí' },
-  { to: '/settings', icon: Settings, label: 'ÉèÖÃ' },
+  { to: '/', icon: LayoutDashboard, label: 'ä»ªè¡¨ç›˜' },
+  { to: '/accounts', icon: Users, label: 'è´¦å·ç®¡ç†' },
+  { to: '/proxy', icon: Network, label: 'API åä»£' },
+  { to: '/logs', icon: ScrollText, label: 'æµé‡æ—¥å¿—' },
+  { to: '/settings', icon: Settings, label: 'è®¾ç½®' },
 ];
 
 export default function Layout() {

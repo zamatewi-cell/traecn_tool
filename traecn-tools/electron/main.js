@@ -673,10 +673,28 @@ app.whenReady().then(() => {
   });
 });
 
-app.on('window-all-closed', () => {
-  if (proxyProcess) {
-    proxyProcess.kill();
+function killProxyProcess() {
+  if (proxyProcess && !proxyProcess.killed) {
+    try {
+      proxyProcess.kill('SIGTERM');
+      setTimeout(() => {
+        if (proxyProcess && !proxyProcess.killed) {
+          try {
+            proxyProcess.kill('SIGKILL');
+          } catch (e) {}
+        }
+      }, 1000);
+    } catch (e) {}
     proxyProcess = null;
   }
+}
+
+app.on('before-quit', killProxyProcess);
+app.on('will-quit', killProxyProcess);
+process.on('exit', killProxyProcess);
+
+app.on('window-all-closed', () => {
+  killProxyProcess();
   if (process.platform !== 'darwin') app.quit();
 });
+

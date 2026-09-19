@@ -1,101 +1,104 @@
-# OpenAI API ²ã¿ìËÙÖ¸ÄÏ
+# OpenAI API å±‚å¿«é€ŸæŒ‡å—
 
-**×îºó¸üĞÂ**: 2026-03-15  
-**×´Ì¬**: ? ÒÑÍê³É
+**æœ€åæ›´æ–°**: 2026-09-19  
+**ç‰ˆæœ¬**: 1.0.0  
+**çŠ¶æ€**: å·²å°±ç»ª (Production Ready)
 
 ---
 
-## ? ¿ìËÙÆô¶¯
+## å¿«é€Ÿå¯åŠ¨
 
-### 1. Æô¶¯ Proxy ·şÎñ
+### 1. å¯åŠ¨ Proxy æœåŠ¡
 
 ```bash
-# È·±£ÒÑÅäÖÃ config.json
+# ç¡®ä¿å·²é…ç½® config.jsonï¼Œæˆ–ç›´æ¥æ— å‚å¯åŠ¨ï¼ˆè‡ªåŠ¨å—…æ¢æœ¬åœ° Trae CN å‡­æ®ï¼‰
 go run cmd/trae-proxy/main.go
+# æˆ–ç›´æ¥è¿è¡Œç¼–è¯‘å¥½çš„å¯æ‰§è¡Œç¨‹åº
+./trae-proxy.exe
 ```
 
-### 2. ÑéÖ¤·şÎñ½¡¿µ
+### 2. éªŒè¯æœåŠ¡å¥åº·
 
 ```bash
-curl http://localhost:8080/health
+curl http://localhost:9090/health
 ```
 
-Ô¤ÆÚÏìÓ¦:
+é¢„æœŸå“åº”:
 ```json
-{"status": "ok", "version": "0.1.0"}
+{"status": "ok", "version": "1.0.0"}
 ```
 
 ---
 
-## ? ²âÊÔ API
+## æµ‹è¯• API
 
-### ·½·¨ 1: Ê¹ÓÃ²âÊÔ½Å±¾ (ÍÆ¼ö)
+### æ–¹æ³• 1: ä½¿ç”¨æµ‹è¯•è„šæœ¬
 
 ```bash
-# °²×°ÒÀÀµ
+# å®‰è£…ä¾èµ–
 cd scripts
 npm install openai
 
-# ÔËĞĞ²âÊÔ
+# è¿è¡Œæµ‹è¯•
 node test_openai_api.js
 ```
 
-### ·½·¨ 2: Ê¹ÓÃ cURL
+### æ–¹æ³• 2: ä½¿ç”¨ cURL
 
 ```bash
-# »ñÈ¡Ä£ĞÍÁĞ±í
-curl http://localhost:8080/v1/models
+# è·å–æ¨¡å‹åˆ—è¡¨
+curl http://localhost:9090/v1/models
 
-# ·ÇÁ÷Ê½ÁÄÌì
-curl -X POST http://localhost:8080/v1/chat/completions \
+# éæµå¼èŠå¤©
+curl -X POST http://localhost:9090/v1/chat/completions \
   -H "Authorization: Bearer sk-test" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "deepseek-v3.1-terminus",
+    "model": "Seed-Code",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 
-# Á÷Ê½ÁÄÌì
-curl -X POST http://localhost:8080/v1/chat/completions \
+# æµå¼èŠå¤©
+curl -X POST http://localhost:9090/v1/chat/completions \
   -H "Authorization: Bearer sk-test" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "deepseek-v3.1-terminus",
+    "model": "Seed-Code",
     "messages": [{"role": "user", "content": "Hello!"}],
     "stream": true
   }'
 ```
 
-### ·½·¨ 3: Ê¹ÓÃ Python SDK
+### æ–¹æ³• 3: ä½¿ç”¨ Python SDK
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://localhost:8080/v1",
+    base_url="http://localhost:9090/v1",
     api_key="sk-test"
 )
 
 response = client.chat.completions.create(
-    model="deepseek-v3.1-terminus",
+    model="Seed-Code",
     messages=[{"role": "user", "content": "Hello!"}]
 )
 
 print(response.choices[0].message.content)
 ```
 
-### ·½·¨ 4: Ê¹ÓÃ Node.js SDK
+### æ–¹æ³• 4: ä½¿ç”¨ Node.js SDK
 
 ```javascript
 import OpenAI from 'openai';
 
 const client = new OpenAI({
-  baseURL: 'http://localhost:8080/v1',
+  baseURL: 'http://localhost:9090/v1',
   apiKey: 'sk-test'
 });
 
 const response = await client.chat.completions.create({
-  model: 'deepseek-v3.1-terminus',
+  model: 'Seed-Code',
   messages: [{ role: 'user', content: 'Hello!' }]
 });
 
@@ -104,93 +107,82 @@ console.log(response.choices[0].message.content);
 
 ---
 
-## ? ÅäÖÃ API Keys
+## é…ç½® API Keys
 
-±à¼­ `config.json`:
+ç¼–è¾‘ `config.json`:
 
 ```json
 {
-  "openai_api": {
-    "enabled": true,
-    "port": 8080,
-    "api_keys": ["sk-your-key-1", "sk-your-key-2"]
+  "listen_addr": ":9090",
+  "log_level": "info",
+  "api_key": "sk-your-key",
+  "protect": {
+    "max_concurrent": 4
   }
 }
 ```
 
-ÖØÆô·şÎñºóÉúĞ§¡£
+é‡å¯æœåŠ¡åç”Ÿæ•ˆã€‚å¦‚æœè®¾ç½®äº† `api_key`ï¼Œå®¢æˆ·ç«¯è¯·æ±‚å¿…é¡»æºå¸¦ `Authorization: Bearer <api_key>`ã€‚
 
 ---
 
-## ? ÍêÕûÎÄµµ
+## å®Œæ•´æ–‡æ¡£
 
-ÏêÏ¸ API ÎÄµµÇë²é¿´£º[`docs/api-reference.md`](docs/api-reference.md)
-
----
-
-## ? ÒÑÊµÏÖ¹¦ÄÜ
-
-- [x] GET /v1/models - Ä£ĞÍÁĞ±í
-- [x] POST /v1/chat/completions - ÁÄÌìÍê³É£¨Á÷Ê½/·ÇÁ÷Ê½£©
-- [x] POST /v1/completions - ÎÄ±¾Íê³É
-- [x] GET /v1/queue/status - ¶ÓÁĞ×´Ì¬
-- [x] GET /health - ½¡¿µ¼ì²é
-- [x] API Key ÈÏÖ¤
-- [x] CORS Ö§³Ö
-- [x] ÇëÇóÈÕÖ¾
-- [x] SSE Á÷Ê½´«Êä
+è¯¦ç»† API æ–‡æ¡£è¯·æŸ¥çœ‹ï¼š[`docs/api-reference.md`](docs/api-reference.md)
 
 ---
 
-## ? ¹ÊÕÏÅÅ²é
+## å·²å®ç°åŠŸèƒ½
 
-### ·şÎñÎŞ·¨Æô¶¯
+- [x] GET /v1/models - æ¨¡å‹åˆ—è¡¨ï¼ˆåŒ…å« 16 ä¸ªå†…ç½®æ¨¡å‹ä¸ 5 ä¸ªé¢„è®¾æ¨¡å‹ï¼‰
+- [x] POST /v1/chat/completions - èŠå¤©å®Œæˆï¼ˆæµå¼/éæµå¼ï¼Œæ”¯æŒæ€è€ƒé“¾åˆ†æµï¼‰
+- [x] POST /v1/messages - Anthropic Messages åè®®å…¼å®¹
+- [x] POST /v1/responses - Codex åè®®å…¼å®¹
+- [x] GET /v1/queue/status - é˜Ÿåˆ—çŠ¶æ€
+- [x] GET /v1/accounts - è´¦å·æ± ä¸å‡­æ®çŠ¶æ€
+- [x] GET /health - å¥åº·æ£€æŸ¥ï¼ˆè¿”å› version 1.0.0ï¼‰
+- [x] WebUI å¯è§†åŒ–æ§åˆ¶å°ï¼ˆ/ æˆ– /dashboardï¼‰
+- [x] API Key è®¤è¯ä¸ LAN å®‰å…¨æš´éœ²é˜²å‘†
+- [x] CSRF è·¨ç«™é˜²æŠ¤ä¸ CORS æ”¯æŒ
+- [x] SQLite è¯·æ±‚æµæ°´ä¸æœ¬åœ°æ—¥å¿—æŒä¹…åŒ–
+- [x] SSE æµå¼ä¼ è¾“ä¸é¦–å­—å»¶è¿Ÿ (TTFT) ç›‘æ§
 
-¼ì²é¶Ë¿ÚÊÇ·ñ±»Õ¼ÓÃ:
-```bash
-netstat -ano | findstr :8080
+---
+
+## æ•…éšœæ’æŸ¥
+
+### æœåŠ¡æ— æ³•å¯åŠ¨
+
+æ£€æŸ¥ç«¯å£æ˜¯å¦è¢«å ç”¨:
+```powershell
+netstat -ano | findstr :9090
 ```
 
-### ÊÕµ½ 401 ´íÎó
+### æ”¶åˆ° 401 é”™è¯¯
 
-È·ÈÏÇëÇóÍ·°üº¬ÕıÈ·µÄ API Key:
+ç¡®è®¤è¯·æ±‚å¤´åŒ…å«æ­£ç¡®çš„ API Key:
 ```bash
 curl -H "Authorization: Bearer sk-your-key" ...
 ```
 
-### Ä£ĞÍ²»Ö§³Ö
+### æ¨¡å‹ä¸æ”¯æŒ
 
-²é¿´Ö§³ÖµÄÄ£ĞÍÁĞ±í:
+æŸ¥çœ‹æ”¯æŒçš„æ¨¡å‹åˆ—è¡¨:
 ```bash
-curl http://localhost:8080/v1/models
+curl http://localhost:9090/v1/models
 ```
 
 ---
 
-## ? ¼à¿Ø
+## ç›‘æ§ä¸æ—¥å¿—
 
-### ²é¿´ÇëÇóÈÕÖ¾
+### æŸ¥çœ‹è¯·æ±‚æ—¥å¿—
 
-·şÎñÆô¶¯ºó»á×Ô¶¯¼ÇÂ¼ËùÓĞÇëÇó:
+æœåŠ¡å¯åŠ¨åä¼šè‡ªåŠ¨è®°å½•æ‰€æœ‰è¯·æ±‚:
 ```
-[INFO] POST /v1/chat/completions - 200 OK - 1.234s - model=deepseek-v3.1-terminus, stream=true
-```
-
-### ²é¿´¶ÓÁĞ×´Ì¬
-
-```bash
-curl http://localhost:8080/v1/queue/status
+[INFO] POST /v1/chat/completions - 200 OK - 1.234s - model=Seed-Code, stream=true
 ```
 
----
+### æ§åˆ¶å°åœ¨çº¿æŸ¥çœ‹
 
-## ? ÏÂÒ»²½
-
-1. **Test-Agent**: ±àĞ´µ¥Ôª²âÊÔºÍ¼¯³É²âÊÔ
-2. **UI-Agent**: ´´½¨¹ÜÀí½çÃæ
-3. **PM-Agent**: Ğ­µ÷¸÷Ä£¿é¼¯³É²âÊÔ
-
----
-
-**Î¬»¤Õß**: API-Agent  
-**ÁªÏµ**: @API-Agent
+åœ¨æµè§ˆå™¨è®¿é—® `http://localhost:9090/` å³å¯ç›´æ¥åœ¨æš—é»‘ä¸»é¢˜ä»ªè¡¨ç›˜ä¸­æŸ¥çœ‹å®æ—¶è¯·æ±‚æµæ°´ä¸å®˜æ–¹äº‘ç«¯è´¦å•ã€‚

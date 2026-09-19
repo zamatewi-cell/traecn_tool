@@ -15,7 +15,7 @@ export default function ApiProxy() {
     proxyConfig, updateProxyConfig,
     proxyRunning, startProxy, stopProxy,
     modelMappings, addModelMapping, removeModelMapping,
-    accounts, backendHealth, backendUrl, checkBackendHealth, availableModels, fetchAvailableModels,
+    backendHealth, checkBackendHealth,
   } = useAppStore();
 
   const [showApiKey, setShowApiKey] = useState(false);
@@ -27,6 +27,7 @@ export default function ApiProxy() {
   });
   const [newMappingSource, setNewMappingSource] = useState('');
   const [newMappingTarget, setNewMappingTarget] = useState('');
+  const [taskModel, setTaskModel] = useState('doubao-seed-1.6');
   const [copied, setCopied] = useState<string | null>(null);
   const [backendModels, setBackendModels] = useState<ModelInfo[]>([]);
 
@@ -50,12 +51,13 @@ export default function ApiProxy() {
     } else {
       const result = await startProxy();
       if (!result.success) {
-        alert('Æô¶¯Ê§°Ü: ' + (result.error || 'Î´Öª´íÎó'));      } else {
-        // After successful start, check health and fetch models
+        alert('å¯åŠ¨å¤±è´¥: ' + (result.error || 'æœªçŸ¥é”™è¯¯'));
+      } else {
         setTimeout(() => {
           checkBackendHealth();
           fetchBackendModels();
-        }, 1000);      }
+        }, 1000);
+      }
     }
   };
 
@@ -87,20 +89,22 @@ export default function ApiProxy() {
       {/* Service Config Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold">?? ·şÎñÅäÖÃ</h1>
+          <h1 className="text-lg font-semibold">æœåŠ¡é…ç½®</h1>
           <div className="flex items-center gap-2">
             <div className={`w-2 h-2 rounded-full ${proxyRunning ? 'bg-green-400 pulse-dot' : 'bg-dark-500'}`} />
-            <span className="text-sm text-dark-400">{proxyRunning ? '·şÎñÔËĞĞÖĞ' : '·şÎñÒÑÍ£Ö¹'}</span>
+            <span className="text-sm text-dark-400">{proxyRunning ? 'æœåŠ¡è¿è¡Œä¸­' : 'æœåŠ¡å·²åœæ­¢'}</span>
           </div>
         </div>
-        <button onClick={handleToggleProxy}
+        <button
+          onClick={handleToggleProxy}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
             proxyRunning
               ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'
               : 'bg-blue-600 text-white hover:bg-blue-500'
-          }`}>
+          }`}
+        >
           {proxyRunning ? <PowerOff size={16} /> : <Power size={16} />}
-          {proxyRunning ? 'Í£Ö¹·şÎñ' : 'Æô¶¯·şÎñ'}
+          {proxyRunning ? 'åœæ­¢æœåŠ¡' : 'å¯åŠ¨æœåŠ¡'}
         </button>
       </div>
 
@@ -110,7 +114,7 @@ export default function ApiProxy() {
           {/* Listen Port */}
           <div>
             <label className="block text-sm font-medium text-blue-400 mb-1.5">
-              ¼àÌı¶Ë¿Ú <HelpTip text="·´´ú·şÎñ¼àÌıµÄ±¾µØ¶Ë¿Ú" />
+              ç›‘å¬ç«¯å£ <HelpTip text="åä»£æœåŠ¡ç›‘å¬çš„æœ¬åœ°ç«¯å£" />
             </label>
             <input
               type="number"
@@ -118,13 +122,13 @@ export default function ApiProxy() {
               onChange={(e) => updateProxyConfig({ listenPort: parseInt(e.target.value) || 8045 })}
               className="w-full px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-sm text-dark-200 focus:outline-none focus:border-blue-500"
             />
-            <p className="text-xs text-dark-500 mt-1">Ä¬ÈÏ 8045£¬ĞŞ¸Ä¶Ë¿ÚĞèÖØÆô·şÎñ</p>
+            <p className="text-xs text-dark-500 mt-1">é»˜è®¤ 8045ï¼Œä¿®æ”¹ç«¯å£éœ€é‡å¯æœåŠ¡</p>
           </div>
 
           {/* Request Timeout */}
           <div>
             <label className="block text-sm font-medium text-blue-400 mb-1.5">
-              ÇëÇó³¬Ê± <HelpTip text="µ¥Î»£ºÃë£¬·¶Î§ 30-7200" />
+              è¯·æ±‚è¶…æ—¶ <HelpTip text="å•ä½ï¼šç§’ï¼ŒèŒƒå›´ 30-7200" />
             </label>
             <input
               type="number"
@@ -132,14 +136,14 @@ export default function ApiProxy() {
               onChange={(e) => updateProxyConfig({ requestTimeout: Math.max(30, Math.min(7200, parseInt(e.target.value) || 120)) })}
               className="w-full px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-sm text-dark-200 focus:outline-none focus:border-blue-500"
             />
-            <p className="text-xs text-dark-500 mt-1">Ä¬ÈÏ 120 Ãë£¬·¶Î§ 30-7200Ãë¡£ĞŞ¸ÄºóĞèÖØÆô·şÎñÉúĞ§¡£</p>
+            <p className="text-xs text-dark-500 mt-1">é»˜è®¤ 120 ç§’ï¼ŒèŒƒå›´ 30-7200ç§’ã€‚ä¿®æ”¹åéœ€é‡å¯æœåŠ¡ç”Ÿæ•ˆã€‚</p>
           </div>
         </div>
 
-        {/* Auto Start + LAN */}
+        {/* Auto Start */}
         <div className="flex items-center gap-8">
           <div className="flex items-center gap-3">
-            <span className="text-sm text-dark-300">¸úËæÓ¦ÓÃ×Ô¶¯Æô¶¯</span>
+            <span className="text-sm text-dark-300">è·Ÿéšåº”ç”¨è‡ªåŠ¨å¯åŠ¨</span>
             <ToggleSwitch
               active={proxyConfig.autoStart}
               onChange={(v) => updateProxyConfig({ autoStart: v })}
@@ -151,14 +155,14 @@ export default function ApiProxy() {
           {/* Allow LAN */}
           <div>
             <label className="block text-sm font-medium text-dark-200 mb-1.5">
-              ÔÊĞí¾ÖÓòÍø·ÃÎÊ <HelpTip text="¿ªÆôºóÔÊĞí¾ÖÓòÍøÄÚÆäËûÉè±¸·ÃÎÊ" />
+              å…è®¸å±€åŸŸç½‘è®¿é—® <HelpTip text="å¼€å¯åå…è®¸å±€åŸŸç½‘å†…å…¶ä»–è®¾å¤‡è®¿é—®" />
             </label>
             <ToggleSwitch
               active={proxyConfig.allowLan}
               onChange={(v) => updateProxyConfig({ allowLan: v })}
             />
             <p className="text-xs text-dark-500 mt-1">
-              ? ½ö¼àÌı 127.0.0.1£¬½ö±¾»ú¿É·ÃÎÊ£¨ÒşË½ÓÅÏÈ£©
+              é»˜è®¤ä»…ç›‘å¬ 127.0.0.1ï¼Œä»…æœ¬æœºå¯è®¿é—®ï¼ˆéšç§ä¼˜å…ˆï¼‰
             </p>
           </div>
 
@@ -166,10 +170,10 @@ export default function ApiProxy() {
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-sm font-medium text-dark-200">
-                ·ÃÎÊÊÚÈ¨ <HelpTip text="ÊÚÈ¨Ä£Ê½" />
+                è®¿é—®æˆæƒ <HelpTip text="æˆæƒæ¨¡å¼" />
               </label>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-dark-400">ÒÑÆôÓÃ</span>
+                <span className="text-xs text-dark-400">{proxyConfig.authEnabled ? 'å·²å¯ç”¨' : 'å·²å…³é—­'}</span>
                 <ToggleSwitch
                   active={proxyConfig.authEnabled}
                   onChange={(v) => updateProxyConfig({ authEnabled: v })}
@@ -178,19 +182,19 @@ export default function ApiProxy() {
             </div>
             <div>
               <label className="text-xs text-dark-400 mb-1 block">
-                Ä£Ê½ <HelpTip text="Ñ¡ÔñÊÚÈ¨ÑéÖ¤·½Ê½" />
+                æ¨¡å¼ <HelpTip text="é€‰æ‹©æˆæƒéªŒè¯æ–¹å¼" />
               </label>
               <select
                 value={proxyConfig.authMode}
                 onChange={(e) => updateProxyConfig({ authMode: e.target.value as 'auto' | 'bearer' | 'none' })}
                 className="w-full px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-sm text-dark-200 focus:outline-none focus:border-blue-500"
               >
-                <option value="auto">×Ô¶¯£¨ÍÆ¼ö£©</option>
+                <option value="auto">è‡ªåŠ¨ï¼ˆæ¨èï¼‰</option>
                 <option value="bearer">Bearer Token</option>
-                <option value="none">ÎŞÊÚÈ¨</option>
+                <option value="none">æ— æˆæƒ</option>
               </select>
               <p className="text-xs text-dark-500 mt-1">
-                ¿ªÆôºó¿Í»§¶ËĞèÍ¨¹ı Authorization: Bearer ... ´«Èë API ÃÜÔ¿£¨ÈçÑ¡Ôñ"³ı½¡¿µ¼ì²éÍâ"Ôò /healthz Ãâ¼øÈ¨£©¡£
+                å¼€å¯åå®¢æˆ·ç«¯éœ€é€šè¿‡ Authorization: Bearer ... ä¼ å…¥ API å¯†é’¥ã€‚
               </p>
             </div>
           </div>
@@ -199,7 +203,7 @@ export default function ApiProxy() {
         {/* API Key */}
         <div>
           <label className="block text-sm font-medium text-dark-200 mb-1.5">
-            API ÃÜÔ¿ <HelpTip text="ÓÃÓÚ·ÃÎÊÊÚÈ¨µÄÃÜÔ¿" />
+            API å¯†é’¥ <HelpTip text="ç”¨äºè®¿é—®æˆæƒçš„å¯†é’¥" />
           </label>
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
@@ -210,101 +214,83 @@ export default function ApiProxy() {
                 className="w-full px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-sm text-dark-200 font-mono"
               />
             </div>
-            <button onClick={() => setShowApiKey(!showApiKey)}
-              className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg transition-colors">
+            <button
+              onClick={() => setShowApiKey(!showApiKey)}
+              className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg transition-colors"
+              title="æŸ¥çœ‹/éšè— API Key"
+            >
               {showApiKey ? <EyeOff size={16} className="text-dark-400" /> : <Eye size={16} className="text-dark-400" />}
             </button>
-            <button onClick={() => updateProxyConfig({ apiKey: 'sk-' + crypto.getRandomValues(new Uint8Array(24)).reduce((s, b) => s + b.toString(16).padStart(2, '0'), '') })}
-              className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg transition-colors">
+            <button
+              onClick={() => updateProxyConfig({ apiKey: 'sk-' + crypto.getRandomValues(new Uint8Array(24)).reduce((s, b) => s + b.toString(16).padStart(2, '0'), '') })}
+              className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg transition-colors"
+              title="é‡æ–°ç”Ÿæˆéšæœº API Key"
+            >
               <RefreshCw size={16} className="text-dark-400" />
             </button>
-            <button onClick={() => handleCopy(proxyConfig.apiKey, 'apikey')}
-              className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg transition-colors">
+            <button
+              onClick={() => handleCopy(proxyConfig.apiKey, 'apikey')}
+              className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg transition-colors"
+              title="å¤åˆ¶ API Key"
+            >
               {copied === 'apikey' ? <Check size={16} className="text-green-400" /> : <Copy size={16} className="text-dark-400" />}
             </button>
           </div>
-          <p className="text-xs text-orange-400 mt-1">×¢Òâ£ºÇëÍ×ÉÆ±£¹ÜÄúµÄ API ÃÜÔ¿£¬²»ÒªĞ¹Â¶¸øËûÈË¡£</p>
+          <p className="text-xs text-orange-400 mt-1">æ³¨æ„ï¼šè¯·å¦¥å–„ä¿ç®¡æ‚¨çš„ API å¯†é’¥ï¼Œä¸è¦æ³„éœ²ç»™ä»–äººã€‚</p>
         </div>
 
         {/* Web UI Password */}
         <div>
           <label className="block text-sm font-medium text-dark-200 mb-1.5">
-            Web UI ¹ÜÀíºóÌ¨ÃÜÂë <HelpTip text="ÓÃÓÚ¹ÜÀíºóÌ¨µÄµÇÂ¼ÃÜÂë" />
+            Web UI ç®¡ç†åå°å¯†ç  <HelpTip text="ç”¨äºç®¡ç†åå°çš„ç™»å½•å¯†ç " />
           </label>
           <div className="flex items-center gap-2">
             <input
               type={showWebPassword ? 'text' : 'password'}
               value={proxyConfig.webUiPassword || ''}
               onChange={(e) => updateProxyConfig({ webUiPassword: e.target.value })}
-              placeholder="¡´Í¬ API ÃÜÔ¿¡µ"
+              placeholder="ã€ˆåŒ API å¯†é’¥ã€‰"
               className="flex-1 px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-sm text-dark-200 font-mono placeholder:text-dark-500 focus:outline-none focus:border-blue-500"
             />
-            <button onClick={() => setShowWebPassword(!showWebPassword)}
-              className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg transition-colors">
+            <button
+              onClick={() => setShowWebPassword(!showWebPassword)}
+              className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg transition-colors"
+              title="æ˜¾ç¤º/éšè—å¯†ç "
+            >
               {showWebPassword ? <EyeOff size={16} className="text-dark-400" /> : <Eye size={16} className="text-dark-400" />}
             </button>
-            <button onClick={() => handleCopy(proxyConfig.webUiPassword || proxyConfig.apiKey, 'webpw')}
-              className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg transition-colors">
-              {copied === 'webpw' ? <Check size={16} className="text-green-400" /> : <Copy size={16} className="text-dark-400" />}
-            </button>
           </div>
-          <p className="text-xs text-dark-500 mt-1">ÌáÊ¾£ºÔÚ Docker/Web ²¿ÊğÖĞ£¬Äú¿ÉÒÔÉèÖÃÒ»¸ö¶ÀÁ¢µÄµÇÂ¼ÃÜÂë£¬Ìá¸ß API ÃÜÔ¿µÄ°²È«ĞÔ¡£</p>
-        </div>
-
-        {/* User-Agent Override */}
-        <div className="flex items-center justify-between">
-          <div>
-            <span className="text-sm text-dark-200">User-Agent ¸²¸Ç</span>
-            <p className="text-xs text-dark-500 mt-0.5">Ìæ»»·¢³öÇëÇóµÄ User-Agent Í·</p>
-          </div>
-          <ToggleSwitch
-            active={proxyConfig.userAgentOverride}
-            onChange={(v) => updateProxyConfig({ userAgentOverride: v })}
-          />
+          <p className="text-xs text-dark-500 mt-1">ç•™ç©ºåˆ™è‡ªåŠ¨ä½¿ç”¨ä¸Šè¿° API å¯†é’¥ä½œä¸º Web æ§åˆ¶å°ç™»å½•å‡­è¯ã€‚</p>
         </div>
       </div>
 
       {/* Model Router */}
       <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl overflow-hidden">
-        <button onClick={() => toggleSection('router')}
-          className="flex items-center justify-between w-full px-5 py-4 hover:bg-dark-800/30 transition-colors">
+        <button
+          onClick={() => toggleSection('router')}
+          className="flex items-center justify-between w-full px-5 py-4 hover:bg-dark-800/30 transition-colors"
+        >
           <div className="flex items-center gap-2">
-            <span className="text-base">? Ä£ĞÍÂ·ÓÉÖĞĞÄ (Model Router)</span>
+            <span className="text-base font-medium">æ¨¡å‹è·¯ç”±ä¸­å¿ƒ (Model Router)</span>
           </div>
           {expandedSections.router ? <ChevronDown size={18} className="text-dark-400" /> : <ChevronRight size={18} className="text-dark-400" />}
         </button>
 
         {expandedSections.router && (
           <div className="px-5 pb-5 space-y-4">
-            <p className="text-xs text-dark-400">Í¨¹ıÍ¨Åä·û»ò¾«È·Ó³Éä×Ô¶¨ÒåÄ£ĞÍÂ·ÓÉ¹æÔò</p>
+            <p className="text-xs text-dark-400">é€šè¿‡ç²¾ç¡®æˆ–å‰ç¼€åˆ«åè‡ªå®šä¹‰æ˜ å°„æ¨¡å‹è·¯ç”±è§„åˆ™</p>
 
-            {/* Preset selector */}
-            <div className="flex items-center gap-3">
-              <select className="px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-sm text-dark-200">
-                <option>Ä¬ÈÏÔ¤Éè</option>
-              </select>
-              <button className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm transition-colors">
-                ? Ó¦ÓÃËùÑ¡
-              </button>
-              <button className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg transition-colors">
-                <Plus size={16} className="text-dark-400" />
-              </button>
-              <button className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg transition-colors">
-                <Trash2 size={16} className="text-dark-400" />
-              </button>
-              <button className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg transition-colors">
-                <RefreshCw size={16} className="text-dark-400" />
-              </button>
-            </div>
-
-            {/* Background task model */}
+            {/* Background task model (P5: è”åŠ¨çŠ¶æ€) */}
             <div className="flex items-center justify-between bg-dark-900/50 rounded-lg p-3">
               <div>
-                <span className="text-sm text-dark-200">? ºóÌ¨ÈÎÎñÄ£ĞÍ</span>
-                <p className="text-xs text-dark-500 mt-0.5">ÓÃÓÚ±êÌâÉú³É¡¢ÕªÒªÌáÈ¡µÈºóÌ¨×Ô¶¯»¯ÈÎÎñ (Ä¬ÈÏ: doubao-seed-1.6)</p>
+                <span className="text-sm text-dark-200">åå°é»˜è®¤å‚è€ƒæ¨¡å‹</span>
+                <p className="text-xs text-dark-500 mt-0.5">ç”¨äºæ ‡é¢˜ç”Ÿæˆä¸åå°è‡ªåŠ¨åŒ–ä»»åŠ¡</p>
               </div>
-              <select className="px-3 py-1.5 bg-dark-800 border border-dark-600 rounded-lg text-xs text-dark-300">
-                <option value="">Default (doubao-seed-1.6)</option>
+              <select
+                value={taskModel}
+                onChange={(e) => setTaskModel(e.target.value)}
+                className="px-3 py-1.5 bg-dark-800 border border-dark-600 rounded-lg text-xs text-dark-300 focus:outline-none"
+              >
                 {TRAE_MODELS.map(m => (
                   <option key={m.configName} value={m.configName}>{m.displayName}</option>
                 ))}
@@ -313,24 +299,26 @@ export default function ApiProxy() {
 
             {/* Custom Mappings */}
             <div>
-              <h4 className="text-sm font-medium text-dark-200 mb-2">¡ú ×Ô¶¨ÒåÓ³Éä (CUSTOM MAPPINGS)</h4>
+              <h4 className="text-sm font-medium text-dark-200 mb-2">è‡ªå®šä¹‰æ˜ å°„åˆ—è¡¨</h4>
               <p className="text-xs text-dark-500 mb-3">
-                ? Ö§³ÖÊÖ¶¯ÊäÈëÈÎÒâÄ£ĞÍ ID£¬¿ÉÊ¹ÓÃÎ´·¢²¼Ä£ĞÍ(Èç claude-opus-4-6)¡£
-                <span className="text-orange-400">×¢Òâ:²¢·ÇËùÓĞÕËºÅ¶¼Ö§³ÖÎ´·¢²¼Ä£ĞÍ¡£</span>
+                æ”¯æŒæ‰‹åŠ¨è¾“å…¥ä»»æ„æ¨¡å‹åˆ«åæ˜ å°„ï¼ˆå¦‚æ˜ å°„ gpt-4 åˆ° deepseek-r1ï¼‰ã€‚
               </p>
 
               {/* Current mappings */}
               <div className="bg-dark-900/50 rounded-lg p-3 mb-3 min-h-[60px]">
-                <div className="text-xs text-dark-500 uppercase mb-2">µ±Ç°Ó³ÉäÁĞ±í (CUSTOM LIST)</div>
+                <div className="text-xs text-dark-500 uppercase mb-2">å·²é…ç½®æ˜ å°„</div>
                 {modelMappings.length === 0 ? (
-                  <p className="text-xs text-dark-500 text-center py-4">ÔİÎŞ×Ô¶¨Òå¾«È·Ó³Éä</p>
+                  <p className="text-xs text-dark-500 text-center py-4">æš‚æ— è‡ªå®šä¹‰ç²¾ç¡®æ˜ å°„</p>
                 ) : (
                   <div className="space-y-2">
                     {modelMappings.map(m => (
                       <div key={m.id} className="flex items-center justify-between bg-dark-800 rounded px-3 py-2">
-                        <span className="text-sm text-dark-300">{m.sourceName} ¡ú {m.targetModel}</span>
-                        <button onClick={() => removeModelMapping(m.id)}
-                          className="text-dark-500 hover:text-red-400 transition-colors">
+                        <span className="text-sm text-dark-300 font-mono">{m.sourceName} â†’ {m.targetModel}</span>
+                        <button
+                          onClick={() => removeModelMapping(m.id)}
+                          className="text-dark-500 hover:text-red-400 transition-colors p-1"
+                          title="åˆ é™¤æ˜ å°„"
+                        >
                           <Trash2 size={14} />
                         </button>
                       </div>
@@ -341,26 +329,29 @@ export default function ApiProxy() {
 
               {/* Add mapping */}
               <div className="flex items-center gap-2">
-                <span className="text-xs text-dark-400 shrink-0">¨’ Ìí¼ÓÓ³Éä (ADD MAPPING)</span>
+                <span className="text-xs text-dark-400 shrink-0">æ·»åŠ æ˜ å°„:</span>
                 <input
                   value={newMappingSource}
                   onChange={(e) => setNewMappingSource(e.target.value)}
-                  placeholder="Ô­Ê¼Ãû (Èç gpt-4 »ò gpt-4*)"
+                  placeholder="åŸå§‹å (å¦‚ gpt-4)"
                   className="flex-1 px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-200 placeholder:text-dark-500 focus:outline-none focus:border-blue-500"
                 />
                 <select
                   value={newMappingTarget}
                   onChange={(e) => setNewMappingTarget(e.target.value)}
-                  className="px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-200 w-48"
+                  className="px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-200 w-48 focus:outline-none"
                 >
-                  <option value="">Ñ¡ÔñÄ¿±êÄ£ĞÍ</option>
+                  <option value="">é€‰æ‹©ç›®æ ‡æ¨¡å‹</option>
                   {TRAE_MODELS.map(m => (
                     <option key={m.configName} value={m.configName}>{m.displayName}</option>
                   ))}
                 </select>
-                <button onClick={handleAddMapping}
-                  className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs transition-colors">
-                  <Plus size={14} /> Ìí¼Ó
+                <button
+                  onClick={handleAddMapping}
+                  disabled={!newMappingSource || !newMappingTarget}
+                  className="flex items-center gap-1 px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs transition-colors text-white disabled:opacity-50"
+                >
+                  <Plus size={14} /> æ·»åŠ 
                 </button>
               </div>
             </div>
@@ -370,31 +361,34 @@ export default function ApiProxy() {
 
       {/* Multi-Protocol Support */}
       <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl overflow-hidden">
-        <button onClick={() => toggleSection('protocol')}
-          className="flex items-center justify-between w-full px-5 py-4 hover:bg-dark-800/30 transition-colors">
+        <button
+          onClick={() => toggleSection('protocol')}
+          className="flex items-center justify-between w-full px-5 py-4 hover:bg-dark-800/30 transition-colors"
+        >
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-blue-400 text-lg">?</span>
-              <span className="text-base font-medium">¶àĞ­ÒéÖ§³Ö (Multi-Protocol Support)</span>
+              <span className="text-base font-medium">å¤šåè®®æ”¯æŒ (Multi-Protocol Support)</span>
             </div>
-            <p className="text-xs text-dark-500 mt-0.5">¿ìËÙÍ¬²½ API µØÖ·ÓëÃÜÔ¿µ½±¾µØ AI ¹¤¾ß</p>
+            <p className="text-xs text-dark-500 mt-0.5">å¿«é€ŸåŒæ­¥ API åœ°å€ä¸å¯†é’¥åˆ°æœ¬åœ° AI å·¥å…·</p>
           </div>
           {expandedSections.protocol ? <ChevronDown size={18} className="text-dark-400" /> : <ChevronRight size={18} className="text-dark-400" />}
         </button>
 
         {expandedSections.protocol && (
           <div className="px-5 pb-5 space-y-4">
-            <p className="text-sm text-dark-300">·´´ú·şÎñÖ§³Ö OpenAI Ğ­Òé£¬Âú×ã²»Í¬¹¤¾ßµÄ¼¯³ÉĞèÇó</p>
+            <p className="text-sm text-dark-300">åä»£æœåŠ¡æ”¯æŒ OpenAI åè®®ï¼Œæ»¡è¶³ä¸åŒå·¥å…·çš„é›†æˆéœ€æ±‚</p>
 
             <div className="grid grid-cols-3 gap-4">
               {/* OpenAI */}
               <div className="bg-dark-900/50 border-2 border-blue-500/30 rounded-xl p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-blue-400">OpenAI Ğ­Òé</span>
-                  <button onClick={() => handleCopy(`${baseUrl}/v1`, 'openai-base')}
-                    className="flex items-center gap-1 text-xs text-dark-400 hover:text-dark-200 transition-colors">
+                  <span className="text-sm font-medium text-blue-400">OpenAI åè®®</span>
+                  <button
+                    onClick={() => handleCopy(`${baseUrl}/v1`, 'openai-base')}
+                    className="flex items-center gap-1 text-xs text-dark-400 hover:text-dark-200 transition-colors"
+                  >
                     {copied === 'openai-base' ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
-                    ¸´ÖÆ BASE
+                    å¤åˆ¶ BASE
                   </button>
                 </div>
                 <div className="space-y-1 text-xs text-dark-300 font-mono">
@@ -404,28 +398,28 @@ export default function ApiProxy() {
                 </div>
               </div>
 
-              {/* Anthropic */}
-              <div className="bg-dark-900/50 border border-dark-700/50 rounded-xl p-4 opacity-50">
+              {/* Anthropic (P6: æ˜ç¡®æ ‡ä¸ºè§„åˆ’ä¸­ï¼Œå»é™¤å‡å¤åˆ¶å›¾æ ‡) */}
+              <div className="bg-dark-900/50 border border-dark-700/50 rounded-xl p-4 opacity-60">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-dark-300">Anthropic Ğ­Òé</span>
-                  <Copy size={12} className="text-dark-500" />
+                  <span className="text-sm font-medium text-dark-300">Anthropic åè®®</span>
+                  <span className="text-[10px] text-dark-400 px-1.5 py-0.5 bg-dark-800 rounded">Roadmap</span>
                 </div>
                 <div className="space-y-1 text-xs text-dark-500 font-mono">
                   <div>/v1/messages</div>
                 </div>
-                <div className="text-xs text-dark-500 mt-2">¼´½«Ö§³Ö</div>
+                <div className="text-xs text-dark-400 mt-2">å¾…åç»­ç‰ˆæœ¬å¼€æ”¾</div>
               </div>
 
-              {/* Gemini */}
-              <div className="bg-dark-900/50 border border-dark-700/50 rounded-xl p-4 opacity-50">
+              {/* Gemini (P6: æ˜ç¡®æ ‡ä¸ºè§„åˆ’ä¸­ï¼Œå»é™¤å‡å¤åˆ¶å›¾æ ‡) */}
+              <div className="bg-dark-900/50 border border-dark-700/50 rounded-xl p-4 opacity-60">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-medium text-dark-300">Gemini Ğ­Òé</span>
-                  <Copy size={12} className="text-dark-500" />
+                  <span className="text-sm font-medium text-dark-300">Gemini åè®®</span>
+                  <span className="text-[10px] text-dark-400 px-1.5 py-0.5 bg-dark-800 rounded">Roadmap</span>
                 </div>
                 <div className="space-y-1 text-xs text-dark-500 font-mono">
                   <div>/v1beta/models/...</div>
                 </div>
-                <div className="text-xs text-dark-500 mt-2">¼´½«Ö§³Ö</div>
+                <div className="text-xs text-dark-400 mt-2">å¾…åç»­ç‰ˆæœ¬å¼€æ”¾</div>
               </div>
             </div>
           </div>
@@ -434,9 +428,11 @@ export default function ApiProxy() {
 
       {/* Supported Models */}
       <div className="bg-dark-800/50 border border-dark-700/50 rounded-xl overflow-hidden">
-        <button onClick={() => toggleSection('models')}
-          className="flex items-center justify-between w-full px-5 py-4 hover:bg-dark-800/30 transition-colors">
-          <span className="text-base">¡µ Ö§³ÖÄ£ĞÍÓë¼¯³É (Supported Models & Integration)</span>
+        <button
+          onClick={() => toggleSection('models')}
+          className="flex items-center justify-between w-full px-5 py-4 hover:bg-dark-800/30 transition-colors"
+        >
+          <span className="text-base font-medium">æ”¯æŒæ¨¡å‹ä¸é›†æˆ (Supported Models & Integration)</span>
           {expandedSections.models ? <ChevronDown size={18} className="text-dark-400" /> : <ChevronRight size={18} className="text-dark-400" />}
         </button>
 
@@ -448,10 +444,9 @@ export default function ApiProxy() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-xs text-dark-400 border-b border-dark-700/50">
-                      <th className="text-left py-2 font-medium">Ä£ĞÍÃû³Æ</th>
-                      <th className="text-left py-2 font-medium">Ä£ĞÍ ID</th>
-                      <th className="text-left py-2 font-medium">ÃèÊö</th>
-                      <th className="text-right py-2 font-medium">²Ù×÷</th>
+                      <th className="text-left py-2 font-medium">æ¨¡å‹åç§°</th>
+                      <th className="text-left py-2 font-medium">æ¨¡å‹ ID</th>
+                      <th className="text-right py-2 font-medium">æ“ä½œ</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -459,18 +454,19 @@ export default function ApiProxy() {
                       <tr key={m.configName || m.id} className="border-b border-dark-700/30 hover:bg-dark-800/30">
                         <td className="py-2.5">
                           <div className="flex items-center gap-2">
-                            <span>{(m as any).icon || '?'}</span>
-                            <span className="font-medium" style={{ color: PROVIDER_COLORS[(m as any).provider || 'other'] }}>
-                              {m.display_name || m.name || (m as any).displayName}
+                            <span>âš¡</span>
+                            <span className="font-medium truncate max-w-[140px]" style={{ color: PROVIDER_COLORS[(m as any).provider || 'other'] || '#94a3b8' }}>
+                              {m.display_name || m.name || (m as any).displayName || m.id}
                             </span>
                           </div>
                         </td>
-                        <td className="py-2.5 text-dark-400 font-mono text-xs">{m.id || m.configName}</td>
-                        <td className="py-2.5 text-dark-400 text-xs">{m.description || (m as any).displayName}</td>
+                        <td className="py-2.5 text-dark-400 font-mono text-xs truncate max-w-[160px]">{m.id || m.configName}</td>
                         <td className="py-2.5 text-right">
-                          <button onClick={() => handleCopy(m.id || m.configName, m.id || m.configName)}
-                            className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
-                            {copied === (m.id || m.configName) ? '? ÒÑ¸´ÖÆ' : '? ¸´ÖÆ'}
+                          <button
+                            onClick={() => handleCopy(m.id || m.configName, m.id || m.configName)}
+                            className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                          >
+                            {copied === (m.id || m.configName) ? 'å·²å¤åˆ¶' : 'å¤åˆ¶ ID'}
                           </button>
                         </td>
                       </tr>
@@ -482,7 +478,7 @@ export default function ApiProxy() {
               {/* Quick Integration */}
               <div className="bg-dark-900/50 rounded-xl p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-semibold text-dark-200">¿ìËÙ¼¯³É (QUICK INTEGRATION)</span>
+                  <span className="text-sm font-semibold text-dark-200">å¿«é€Ÿé›†æˆ (QUICK INTEGRATION)</span>
                   <span className="px-2 py-0.5 bg-dark-700 text-dark-300 rounded text-xs">Python (OpenAI SDK)</span>
                 </div>
                 <pre className="text-xs text-dark-300 font-mono bg-dark-950 rounded-lg p-4 overflow-x-auto leading-relaxed">
@@ -490,7 +486,7 @@ export default function ApiProxy() {
 
 client = OpenAI(
     base_url="http://127.0.0.1:${proxyConfig.listenPort}/v1",
-    api_key="${proxyConfig.apiKey}"
+    api_key="${proxyConfig.apiKey || 'YOUR_API_KEY'}"
 )
 
 response = client.chat.completions.create(
@@ -523,7 +519,7 @@ function ToggleSwitch({ active, onChange }: { active: boolean; onChange: (v: boo
 function HelpTip({ text }: { text: string }) {
   return (
     <span className="inline-block ml-1 text-dark-500 cursor-help" title={text}>
-      ?
+      â“˜
     </span>
   );
 }

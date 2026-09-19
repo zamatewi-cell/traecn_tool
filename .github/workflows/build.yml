@@ -1,0 +1,234 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  # =========================================================================
+  # Job 1: 自动化门禁检查 (Test Gate)
+  # =========================================================================
+  test:
+    name: Test & Lint Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Run Go Tests
+        run: |
+          go test -v ./...
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'traecn-tools/package-lock.json'
+
+      - name: Install Frontend Dependencies
+        run: |
+          npm --prefix traecn-tools ci
+
+      - name: Check Frontend Build
+        run: |
+          npm --prefix traecn-tools run build
+
+  # =========================================================================
+  # Job 2: Go 核心代理跨平台交叉编译矩阵 (Cross-Platform Binaries)
+  # =========================================================================
+  build-proxy:
+    name: Build Proxy (${{ matrix.os }}/${{ matrix.arch }})
+    needs: [test]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: windows
+            arch: amd64
+            ext: .exe
+            archive: zip
+          - os: windows
+            arch: arm64
+            ext: .exe
+            archive: zip
+          - os: linux
+            arch: amd64
+            ext: ""
+            archive: tar.gz
+          - os: linux
+            arch: arm64
+            ext: ""
+            archive: tar.gz
+          - os: darwin
+            arch: amd64
+            ext: ""
+            archive: tar.gz
+          - os: darwin
+            arch: arm64
+            ext: ""
+            archive: tar.gz
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Determine Version
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "VAL=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          else
+            echo "VAL=v1.0.0-dev.${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build Binary
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          VERSION: ${{ steps.version.outputs.VAL }}
+        run: |
+          mkdir -p build_pkg
+          BINARY_NAME="trae-proxy${{ matrix.ext }}"
+          go build -trimpath -ldflags="-s -w -X 'github.com/zamatewi-cell/traecn_tool/internal/version.Version=${VERSION}'" -o "build_pkg/${BINARY_NAME}" ./cmd/trae-proxy
+          
+          if [ -z "${{ matrix.ext }}" ]; then
+            chmod +x "build_pkg/${BINARY_NAME}"
+          fi
+
+          # 复制分发说明与示例配置
+          cp LICENSE build_pkg/ 2>/dev/null || true
+          cp README.md build_pkg/ 2>/dev/null || true
+          cp config.example.json build_pkg/ 2>/dev/null || true
+
+      - name: Package Archive
+        id: package
+        run: |
+          VERSION="${{ steps.version.outputs.VAL }}"
+          PKG_NAME="trae-proxy_${VERSION}_${{ matrix.os }}_${{ matrix.arch }}"
+          
+          mkdir -p dist
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            cd build_pkg
+            zip -9 -r "../dist/${PKG_NAME}.zip" .
+            cd ..
+            echo "FILE=${PKG_NAME}.zip" >> $GITHUB_OUTPUT
+          else
+            cd build_pkg
+            tar -czvf "../dist/${PKG_NAME}.tar.gz" .
+            cd ..
+            echo "FILE=${PKG_NAME}.tar.gz" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload Proxy Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: proxy-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/*
+          retention-days: 2
+
+  # =========================================================================
+  # Job 3: Windows 桌面客户端打包 (Electron NSIS Setup + Portable)
+  # =========================================================================
+  build-desktop:
+    name: Build Desktop (Windows x64 NSIS & Portable)
+    needs: [test]
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'traecn-tools/package-lock.json'
+
+      - name: Pre-build Embedded trae-proxy.exe
+        env:
+          CGO_ENABLED: 0
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          go build -trimpath -ldflags="-s -w" -o trae-proxy.exe ./cmd/trae-proxy
+          Get-Item trae-proxy.exe
+
+      - name: Install Frontend Dependencies
+        working-directory: traecn-tools
+        run: |
+          npm ci
+
+      - name: Build and Package Electron App
+        working-directory: traecn-tools
+        run: |
+          npm run dist:win
+
+      - name: Upload Desktop Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows-x64
+          path: |
+            traecn-tools/release/*.exe
+            !traecn-tools/release/*-unpacked/**
+          retention-days: 2
+
+  # =========================================================================
+  # Job 4: 自动发布 Release 与 SHA256 校验和 (仅限 v* Tag)
+  # =========================================================================
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-proxy, build-desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Generate Checksums
+        working-directory: release-artifacts
+        run: |
+          ls -la
+          sha256sum *.zip *.tar.gz *.exe > checksums.txt
+          cat checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artifacts/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
