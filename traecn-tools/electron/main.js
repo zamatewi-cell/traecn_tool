@@ -567,7 +567,14 @@ function terminateProxyProcess(targetProc = null, timeoutMs = 3000) {
 // ===== Proxy Service =====
 async function startProxyServiceInternal(config) {
   if (proxyProcess) {
-    await terminateProxyProcess(proxyProcess);
+    const termRes = await terminateProxyProcess(proxyProcess);
+    if (termRes && termRes.success === false) {
+      console.error(`[ProxyLifeCycle] 重新启动前终止旧代理进程失败:`, termRes);
+      return {
+        success: false,
+        error: `旧代理进程终止失败 (${termRes.error || '超时'})，已中止启动以避免产生孤儿进程`,
+      };
+    }
   }
 
   // 强校验前置防线 1: 当开启授权时，必须具有非空白有效密钥
@@ -764,7 +771,7 @@ function stopProxyService() {
     if (proxyProcess) {
       return await terminateProxyProcess(proxyProcess);
     }
-    return { success: false, error: '服务未运行' };
+    return { success: true, notRunning: true };
   });
 }
 
@@ -817,10 +824,10 @@ function setupIPC() {
         mergedData.accounts = mergeAccountsSafely(mergedData.accounts, currentDisk.accounts || []);
       }
       saveData(mergedData);
-      return true;
+      return { success: true };
     } catch (e) {
       console.error('[SaveData] 保存数据失败:', e);
-      return false;
+      return { success: false, error: e.message || String(e) };
     }
   });
 
@@ -986,6 +993,10 @@ module.exports = {
   mergeAccountsSafely,
   terminateProxyProcess,
   handleTokenRefreshed,
+  startProxyServiceInternal,
+  stopProxyService,
+  saveData,
+  loadData,
   getProxyProcess: () => proxyProcess,
   setProxyProcess: (p) => { proxyProcess = p; },
 };

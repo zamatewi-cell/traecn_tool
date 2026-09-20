@@ -10,6 +10,7 @@ interface AppStore {
   proxyConfig: ProxyConfig;
   proxyRunning: boolean;
   currentAccountId: string | null;
+  runtimeActiveAccountId: string | null;
   modelMappings: ModelMapping[];
   proxyLogs: string[];
   loading: boolean;
@@ -53,7 +54,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     requestTimeout: 120,
     autoStart: false,
     allowLan: false,
-    authEnabled: true,
+    authEnabled: false,
     authMode: 'auto',
     apiKey: '',
     webUiPassword: '',
@@ -62,6 +63,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
   proxyRunning: false,
   currentAccountId: null,
+  runtimeActiveAccountId: null,
   modelMappings: [],
   proxyLogs: [],
   loading: true,
@@ -91,11 +93,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       // Check proxy status
       const status = await api().proxyStatus();
-      set({ proxyRunning: status.running });
+      set({
+        proxyRunning: status.running,
+        runtimeActiveAccountId: status.running ? (current?.id || null) : null,
+      });
 
       // Listen for proxy events
       api().onProxyLog((log: string) => get().addProxyLog(log));
-      api().onProxyStatus((status: { running: boolean }) => set({ proxyRunning: status.running }));
+      api().onProxyStatus((status: { running: boolean }) =>
+        set({
+          proxyRunning: status.running,
+          runtimeActiveAccountId: status.running ? get().runtimeActiveAccountId : null,
+        })
+      );
 
       // 订阅主进程凭据刷新推送，原子更新渲染层内存快照（严禁调用 save()，防止写盘循环）
       (api() as any).onAccountUpdated?.((updatedAcc: Account) => {
@@ -132,7 +142,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
       proxyConfig,
       settings: { language: 'zh', theme: 'dark' },
     };
-    await api().saveData(data);
+    const res = await api().saveData(data);
+    if (res && res.success === false) {
+      console.error('[Store] 持久化数据写入失败:', res.error);
+      throw new Error(res.error || '持久化数据写入失败');
+    }
   },
 
   addAccount: (account) => {
@@ -186,13 +200,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   startProxy: async () => {
     const result = await api().startProxy(get().proxyConfig);
-    if (result.success) set({ proxyRunning: true });
+    if (result.success) {
+      set({
+        proxyRunning: true,
+        runtimeActiveAccountId: get().currentAccountId,
+      });
+    }
     return result;
   },
 
   stopProxy: async () => {
     const result = await api().stopProxy();
-    if (result.success) set({ proxyRunning: false });
+    if (result.success) {
+      set({
+        proxyRunning: false,
+        runtimeActiveAccountId: null,
+      });
+    }
     return result;
   },
 

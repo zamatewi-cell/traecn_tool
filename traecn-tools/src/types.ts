@@ -77,7 +77,7 @@ export interface AppSettings {
 // ===== Electron API =====
 export interface ElectronAPI {
   loadData: () => Promise<AppData>;
-  saveData: (data: AppData) => Promise<boolean>;
+  saveData: (data: AppData) => Promise<{ success: boolean; error?: string }>;
   addAccountOAuth: (deviceInfo?: Record<string, string>) => Promise<{ success: boolean; data?: Record<string, string>; error?: string }>;
   readTraeStorage: (storagePath?: string) => Promise<{ success: boolean; data?: Record<string, string>; error?: string }>;
   importAccounts: () => Promise<{ success: boolean; data?: Account[]; error?: string; canceled?: boolean; filePath?: string }>;

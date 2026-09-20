@@ -699,5 +699,11 @@ func (h *ResponsesHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 			"sequence_number": nextSeq(),
 			"response":        completed,
 		})
+	} else if status == "incomplete" {
+		em.emit("response.incomplete", map[string]interface{}{
+			"type":            "response.incomplete",
+			"sequence_number": nextSeq(),
+			"response":        completed,
+		})
 	}
 }

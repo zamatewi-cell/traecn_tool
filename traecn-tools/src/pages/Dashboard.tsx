@@ -9,16 +9,48 @@ import { apiClient } from '../api/client';
 
 export default function Dashboard() {
   const {
-    accounts, proxyRunning, currentAccountId, backendHealth,
+    accounts, proxyRunning, currentAccountId, runtimeActiveAccountId, startProxy, stopProxy, backendHealth,
     availableModels, backendUrl, checkBackendHealth, fetchAvailableModels, switchAccount,
   } = useAppStore();
 
   const [refreshing, setRefreshing] = useState(false);
-  const [appVersion, setAppVersion] = useState('1.0.1');
+  const [appVersion, setAppVersion] = useState('1.0.2');
 
   const currentAccount = accounts.find((a) => a.id === currentAccountId);
   const activeAccounts = accounts.filter((a) => !a.disabled);
   const totalAccounts = accounts.length;
+
+  const handleDashboardSwitchAccount = async (id: string) => {
+    if (proxyRunning) {
+      const confirmed = window.confirm(
+        '当前代理服务正在运行中，切换账号需重启代理服务方能使网关生效。\n\n' +
+        '点击【确定】将立即自动平滑重启代理；\n' +
+        '点击【取消】将仅记录首选项，并在下次启动代理时生效。'
+      );
+      switchAccount(id);
+      if (confirmed) {
+        try {
+          const stopRes = await stopProxy();
+          if (stopRes && stopRes.success === false) {
+            alert('重启代理服务失败 (停止旧进程超时): ' + (stopRes.error || '未知错误'));
+            return;
+          }
+          const startRes = await startProxy();
+          if (!startRes.success) {
+            alert('重启代理服务失败: ' + (startRes.error || '未知错误'));
+          } else {
+            alert('账号切换成功，代理服务已重启并立即生效！');
+          }
+        } catch (err: any) {
+          alert('重启代理服务异常: ' + (err?.message || err));
+        }
+      } else {
+        alert('已记录该账号为首选账号。当前代理服务仍在运行旧账号，将在下次重启代理后生效。');
+      }
+    } else {
+      switchAccount(id);
+    }
+  };
 
   // Check backend health & version on mount
   useEffect(() => {
@@ -256,12 +288,20 @@ export default function Dashboard() {
               </div>
               <button
                 onClick={() => {
-                  switchAccount(activeAccounts[0].id);
+                  handleDashboardSwitchAccount(activeAccounts[0].id);
                 }}
-                disabled={activeAccounts[0].id === currentAccountId}
+                disabled={activeAccounts[0].id === currentAccountId && (!proxyRunning || runtimeActiveAccountId === activeAccounts[0].id)}
                 className="w-full py-2.5 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 rounded-lg text-sm font-medium transition-all text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {activeAccounts[0].id === currentAccountId ? '当前已是该账号' : '一键切换此账号'}
+                {(() => {
+                  if (activeAccounts[0].id === currentAccountId) {
+                    if (proxyRunning && runtimeActiveAccountId !== activeAccounts[0].id) {
+                      return '当前首选 (待重启代理后生效)';
+                    }
+                    return '当前已是该账号';
+                  }
+                  return '一键切换此账号';
+                })()}
               </button>
             </div>
           ) : (

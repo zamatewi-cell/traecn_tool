@@ -397,3 +397,73 @@ func TestAdversarial_NonChat_UnsupportedToolCombinations(t *testing.T) {
 		})
 	}
 }
+
+// TestResponses_Streaming_EmitsIncompleteEventOnLengthFinish 对抗验证：
+// 当上游返回 finish_reason: "length"（超长截断）时，
+// 网关必须下发标准 response.done 与 response.incomplete 事件，
+// 且严禁下发 response.completed 事件。
+func TestResponses_Streaming_EmitsIncompleteEventOnLengthFinish(t *testing.T) {
+	withUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		fl, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatalf("expected http.Flusher")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fl.Flush()
+
+		chunks := []string{
+			`data: {"choices":[{"delta":{"content":"This is a truncated text that hits token limit..."}}]}`,
+			`data: {"choices":[{"finish_reason":"length"}]}`,
+			`data: [DONE]`,
+		}
+		for _, c := range chunks {
+			w.Write([]byte(c + "\n\n"))
+			fl.Flush()
+		}
+	}, func(p *proxy.TraeProxy, _ *map[string]interface{}) {
+		h := NewResponsesHandler(p)
+		req := httptest.NewRequest("POST", "/v1/responses", strings.NewReader(`{
+			"model": "seed_m8",
+			"input": "test length truncation",
+			"stream": true
+		}`))
+		rec := httptest.NewRecorder()
+		h.HandleResponses(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("HandleResponses returned status %d: %s", rec.Code, rec.Body.String())
+		}
+
+		events := parseSSEEvents(t, rec.Body.String())
+
+		var hasDone, hasIncomplete, hasCompleted bool
+		for _, ev := range events {
+			evType, _ := ev["type"].(string)
+			if evType == "response.done" {
+				hasDone = true
+			}
+			if evType == "response.incomplete" {
+				hasIncomplete = true
+				respObj, ok := ev["response"].(map[string]interface{})
+				if !ok || respObj["status"] != "incomplete" {
+					t.Fatalf("response.incomplete event missing valid response object with status 'incomplete': %v", ev)
+				}
+			}
+			if evType == "response.completed" {
+				hasCompleted = true
+			}
+		}
+
+		if !hasDone {
+			t.Errorf("expected response.done event, but not found")
+		}
+		if !hasIncomplete {
+			t.Errorf("expected response.incomplete event, but not found (length stop missing response.incomplete event)")
+		}
+		if hasCompleted {
+			t.Errorf("response.completed event MUST NOT be emitted when status is incomplete")
+		}
+	})
+}
+

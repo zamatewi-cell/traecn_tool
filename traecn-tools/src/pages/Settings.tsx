@@ -126,28 +126,37 @@ export default function SettingsPage() {
         return;
       }
 
-      // 步骤 1: 停止正在运行的代理服务
+      // 步骤 1: 强同步停止正在运行的代理服务，失败立即熔断
       if (window.electronAPI?.stopProxy) {
-        await window.electronAPI.stopProxy();
+        const stopRes = await window.electronAPI.stopProxy();
+        if (stopRes && stopRes.success === false) {
+          alert('【恢复中止】停止正在运行的代理服务失败：' + (stopRes.error || '进程停止超时') + '，已取消恢复数据以防止状态冲突！');
+          return;
+        }
       }
 
       const currentConfig = useAppStore.getState().proxyConfig;
       const mergedConfig = proxyConfigToRestore ? { ...currentConfig, ...proxyConfigToRestore } : currentConfig;
 
-      // 步骤 2: 持久化存储
+      // 步骤 2: 持久化存储，写入失败立即阻断
       if (window.electronAPI?.saveData) {
-        await window.electronAPI.saveData({
+        const saveRes = await window.electronAPI.saveData({
           accounts: accountsToRestore,
           proxyConfig: mergedConfig,
           settings: { language: 'zh', theme: 'dark' },
         });
+        if (saveRes && saveRes.success === false) {
+          alert('【恢复失败】持久化数据写入磁盘失败：' + (saveRes.error || '写盘异常') + '，未修改本地配置。');
+          return;
+        }
       }
 
-      // 步骤 3: 更新 Store
+      // 步骤 3: 仅在写盘成功后更新 Store
       useAppStore.setState({
         accounts: accountsToRestore,
         proxyConfig: mergedConfig,
         proxyRunning: false,
+        runtimeActiveAccountId: null,
       });
 
       alert(`数据恢复成功！已还原 ${accountsToRestore.length} 个账号及代理配置。`);
@@ -163,11 +172,11 @@ export default function SettingsPage() {
     }
 
     try {
-      // 步骤 1: 强同步前置守卫 —— 无条件调用 stopProxy() 彻底终止后台子进程
+      // 步骤 1: 强同步前置守卫 —— 停止代理服务，失败立即中止
       if (window.electronAPI?.stopProxy) {
         const stopRes = await window.electronAPI.stopProxy();
-        if (stopRes && !stopRes.success && stopRes.error !== '服务未运行') {
-          throw new Error(`停止正在运行的代理服务失败: ${stopRes.error}，为防止凭据残留已中止重置！`);
+        if (stopRes && stopRes.success === false) {
+          throw new Error(`停止正在运行的代理服务失败: ${stopRes.error || '超时'}，为防止凭据残留已中止重置！`);
         }
       }
 
@@ -186,17 +195,21 @@ export default function SettingsPage() {
       };
 
       if (window.electronAPI?.saveData) {
-        await window.electronAPI.saveData({
+        const saveRes = await window.electronAPI.saveData({
           accounts: [],
           proxyConfig: emptyConfig,
           settings: { language: 'zh', theme: 'dark' },
         });
+        if (saveRes && saveRes.success === false) {
+          throw new Error(`写入磁盘失败 (${saveRes.error || '保存失败'})，已取消清空操作！`);
+        }
       }
 
       // 步骤 3: 完整重置前端 Store 状态机 (显式包含 proxyRunning: false)
       useAppStore.setState({
         accounts: [],
         currentAccountId: null,
+        runtimeActiveAccountId: null,
         proxyConfig: emptyConfig,
         proxyLogs: [],
         proxyRunning: false,

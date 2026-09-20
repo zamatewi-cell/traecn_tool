@@ -10,9 +10,11 @@ import {
 
 type ViewMode = 'list' | 'grid';
 type FilterTab = 'all' | 'active' | 'disabled' | string;
-
 export default function Accounts() {
-  const { accounts, addAccount, updateAccount, removeAccount, switchAccount, setAccountDisabled, proxyRunning, startProxy, stopProxy } = useAppStore();
+  const {
+    accounts, addAccount, updateAccount, removeAccount, switchAccount, setAccountDisabled,
+    proxyRunning, runtimeActiveAccountId, startProxy, stopProxy,
+  } = useAppStore();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
@@ -283,21 +285,44 @@ export default function Accounts() {
     URL.revokeObjectURL(url);
   };
 
+
+  const getAccountActiveStatus = (account: Account) => {
+    if (proxyRunning) {
+      if (account.id === runtimeActiveAccountId) return 'active';
+      if (account.isCurrent) return 'pending_restart';
+      return 'inactive';
+    } else {
+      if (account.isCurrent) return 'preferred';
+      return 'inactive';
+    }
+  };
+
   const handleSwitchAccount = async (id: string) => {
     if (proxyRunning) {
-      const confirmed = window.confirm('当前代理服务正在运行，切换账号需重启代理服务即时生效。是否立即重启服务？');
-      if (!confirmed) {
-        return;
-      }
+      const confirmed = window.confirm(
+        '当前代理服务正在运行中，切换账号需重启代理服务方能使网关生效。\n\n' +
+        '点击【确定】将立即自动平滑重启代理；\n' +
+        '点击【取消】将仅记录首选项，并在下次启动代理时生效。'
+      );
       switchAccount(id);
-      try {
-        await stopProxy();
-        const startRes = await startProxy();
-        if (!startRes.success) {
-          alert('重启代理服务失败: ' + (startRes.error || '未知错误'));
+      if (confirmed) {
+        try {
+          const stopRes = await stopProxy();
+          if (stopRes && stopRes.success === false) {
+            alert('重启代理服务失败 (停止旧进程超时): ' + (stopRes.error || '未知错误'));
+            return;
+          }
+          const startRes = await startProxy();
+          if (!startRes.success) {
+            alert('重启代理服务失败: ' + (startRes.error || '未知错误'));
+          } else {
+            alert('账号切换成功，代理服务已重启并立即生效！');
+          }
+        } catch (err: any) {
+          alert('重启代理服务异常: ' + (err?.message || err));
         }
-      } catch (err: any) {
-        alert('重启代理服务异常: ' + (err?.message || err));
+      } else {
+        alert('已记录该账号为首选账号。当前代理服务仍在运行旧账号，将在下次重启代理后生效。');
       }
     } else {
       switchAccount(id);
@@ -407,11 +432,19 @@ export default function Accounts() {
               >
                 {/* Current Indicator */}
                 <div className="flex justify-center">
-                  {account.isCurrent ? (
-                    <div className="w-2.5 h-2.5 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]" title="当前生效账号" />
-                  ) : (
-                    <div className="w-2.5 h-2.5 rounded-full bg-dark-600" />
-                  )}
+                  {(() => {
+                    const status = getAccountActiveStatus(account);
+                    if (status === 'active') {
+                      return <div className="w-2.5 h-2.5 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]" title="当前代理运行中已生效的账号" />;
+                    }
+                    if (status === 'pending_restart') {
+                      return <div className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]" title="已设为首选账号，待重启代理后生效" />;
+                    }
+                    if (status === 'preferred') {
+                      return <div className="w-2.5 h-2.5 rounded-full bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.3)]" title="默认首选账号（启动代理时生效）" />;
+                    }
+                    return <div className="w-2.5 h-2.5 rounded-full bg-dark-600" />;
+                  })()}
                 </div>
 
                 {/* Email & Label */}
@@ -536,7 +569,13 @@ export default function Accounts() {
             <div
               key={account.id}
               className={`bg-dark-800/50 border rounded-xl p-4 card-hover transition-colors ${
-                account.isCurrent ? 'border-green-500/50 shadow-[0_0_15px_rgba(74,222,128,0.1)]' : 'border-dark-700/50'
+                (() => {
+                  const status = getAccountActiveStatus(account);
+                  if (status === 'active') return 'border-green-500/50 shadow-[0_0_15px_rgba(74,222,128,0.1)]';
+                  if (status === 'pending_restart') return 'border-amber-500/50 shadow-[0_0_15px_rgba(251,191,36,0.1)]';
+                  if (status === 'preferred') return 'border-green-500/30';
+                  return 'border-dark-700/50';
+                })()
               }`}
             >
               <div className="flex items-center justify-between mb-3">
@@ -549,7 +588,13 @@ export default function Accounts() {
                     <div className="flex items-center gap-1.5 mt-0.5">
                       {account.isPro && <span className="text-xs text-blue-400 font-semibold">PRO</span>}
                       {account.disabled && <span className="text-xs text-red-400">已禁用</span>}
-                      {account.isCurrent && <span className="text-xs text-green-400 font-medium">● 生效中</span>}
+                      {(() => {
+                        const status = getAccountActiveStatus(account);
+                        if (status === 'active') return <span className="text-xs text-green-400 font-medium">● 生效中</span>;
+                        if (status === 'pending_restart') return <span className="text-xs text-amber-400 font-medium">● 待重启生效</span>;
+                        if (status === 'preferred') return <span className="text-xs text-green-400 font-medium">● 首选账号</span>;
+                        return null;
+                      })()}
                     </div>
                   </div>
                 </div>
