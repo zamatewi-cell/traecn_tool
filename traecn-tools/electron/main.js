@@ -1,4 +1,6 @@
-const { app, BrowserWindow, ipcMain, shell, safeStorage, dialog } = require('electron');
+const electron = require('electron');
+const isElectron = typeof electron === 'object' && electron !== null && !!electron.app;
+const { app, BrowserWindow, ipcMain, shell, safeStorage, dialog } = isElectron ? electron : {};
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
@@ -53,7 +55,7 @@ function checkTcpReady(host, port, timeoutMs, proc) {
   });
 }
 
-const DATA_DIR = path.join(app.getPath('userData'));
+const DATA_DIR = isElectron ? path.join(app.getPath('userData')) : path.join(os.homedir(), '.traecn_tool');
 const DATA_FILE = path.join(DATA_DIR, 'traecn-data.json');
 const PROXY_CONFIG_FILE = path.join(DATA_DIR, 'proxy-config.json');
 
@@ -443,21 +445,60 @@ function readTraeStorage(storagePath) {
   }
 }
 
+/**
+ * 凭据防覆盖合并守卫 (Merge Guard):
+ * 当磁盘已有较新凭据时强制保留最新 token/refreshToken/expiredAt，防止 UI 旧快照覆盖
+ */
+function mergeAccountsSafely(incomingAccounts, diskAccounts) {
+  if (!Array.isArray(incomingAccounts)) return [];
+  if (!Array.isArray(diskAccounts)) return incomingAccounts;
+
+  return incomingAccounts.map((incAcc) => {
+    const diskAcc = diskAccounts.find((a) => a && a.id === incAcc.id);
+    if (!diskAcc) return incAcc;
+
+    const diskLastUsed = diskAcc.lastUsed ? new Date(diskAcc.lastUsed).getTime() : 0;
+    const incLastUsed = incAcc.lastUsed ? new Date(incAcc.lastUsed).getTime() : 0;
+
+    // Merge Guard 判定：若磁盘拥有有效 token 且与传入值不同，且磁盘最后使用/刷新时间晚于或等于传入快照时间
+    const diskHasFresherToken = !!(diskAcc.token && diskAcc.token !== incAcc.token && diskLastUsed >= incLastUsed);
+
+    if (diskHasFresherToken) {
+      return {
+        ...incAcc,
+        token: diskAcc.token,
+        refreshToken: diskAcc.refreshToken || incAcc.refreshToken,
+        expiredAt: diskAcc.expiredAt || incAcc.expiredAt,
+        refreshExpiredAt: diskAcc.refreshExpiredAt || incAcc.refreshExpiredAt,
+        lastUsed: diskAcc.lastUsed,
+      };
+    }
+    return incAcc;
+  });
+}
+
 function handleTokenRefreshed(ev) {
   try {
     const data = loadData();
-    const acc = data.accounts.find(a => a.email === ev.account || a.label === ev.account || (ev.user_id && a.userId === ev.user_id));
-    if (acc) {
-      acc.token = ev.token;
-      if (ev.refresh_token) acc.refreshToken = ev.refresh_token;
-      if (ev.expires_at) acc.expiredAt = ev.expires_at;
-      if (ev.refresh_expires_at) acc.refreshExpiredAt = ev.refresh_expires_at;
-      acc.lastUsed = new Date().toISOString();
-      saveData(data);
-      console.log(`[TokenSync] 账号 ${acc.label || acc.email} 凭据刷新已安全持久化至 DPAPI 存储`);
-      if (mainWindow) {
-        mainWindow.webContents.send('account-updated', acc);
-      }
+    if (!ev || !ev.id) {
+      console.warn('[TokenSync] 接收到的刷新事件缺少唯一 account id，拒绝模糊处理');
+      return;
+    }
+    // 严格唯一定位：必须且仅通过 account id 匹配，废除按名称或多字段宽松 OR 匹配
+    const acc = data.accounts.find(a => a.id === ev.id);
+    if (!acc) {
+      console.warn(`[TokenSync] 未能根据唯一 ID ${ev.id} 找到对应账号，拒绝模糊匹配覆盖`);
+      return;
+    }
+    acc.token = ev.token;
+    if (ev.refresh_token) acc.refreshToken = ev.refresh_token;
+    if (ev.expires_at) acc.expiredAt = ev.expires_at;
+    if (ev.refresh_expires_at) acc.refreshExpiredAt = ev.refresh_expires_at;
+    acc.lastUsed = new Date().toISOString();
+    saveData(data);
+    console.log(`[TokenSync] 账号 ${acc.label || acc.email} (ID: ${acc.id}) 凭据刷新已安全持久化至 DPAPI 存储`);
+    if (mainWindow) {
+      mainWindow.webContents.send('account-updated', acc);
     }
   } catch (e) {
     console.error('[TokenSync] 处理 token 刷新事件异常:', e);
@@ -508,10 +549,16 @@ function terminateProxyProcess(targetProc = null, timeoutMs = 3000) {
       } catch (err) {}
     }
 
-    // 超时保底强制解除 resolve，杜绝 UI 挂死
+    // 超时保底解除：收敛防线，移除 cleanup(-1)，保留 proxyProcess 句柄，返回 success: false
     setTimeout(() => {
       if (!resolved) {
-        cleanup(-1);
+        resolved = true;
+        console.warn(`[ProxyLifeCycle] 终止代理进程超时 (PID: ${pid})，子进程仍在运行中，保留句柄并返回失败`);
+        resolve({
+          success: false,
+          error: `终止代理进程超时 (PID: ${pid})，子进程仍在运行中`,
+          pid,
+        });
       }
     }, timeoutMs);
   });
@@ -628,10 +675,11 @@ async function startProxyServiceInternal(config) {
   }
 
   try {
-    // 零磁盘落盘架构：通过 stdin 管道向 Go 核心传递运行时配置，显式绑定 db-path 与 cwd
-    const proc = spawn(binaryPath, ['-config', 'stdin', '-db-path', dbPath], {
+    // 零磁盘落盘架构：通过 stdin 管道向 Go 核心传递运行时配置，显式绑定 db-path 与 cwd，并开启 -desktop-ipc 管道
+    const proc = spawn(binaryPath, ['-config', 'stdin', '-db-path', dbPath, '-desktop-ipc'], {
       cwd: app.getPath('userData'),
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, TRAE_DESKTOP_IPC: '1' },
     });
     proxyProcess = proc;
 
@@ -761,7 +809,20 @@ function createWindow() {
 function setupIPC() {
   // Data operations
   ipcMain.handle('load-data', () => loadData());
-  ipcMain.handle('save-data', (_, data) => { saveData(data); return true; });
+  ipcMain.handle('save-data', (_, data) => {
+    try {
+      const currentDisk = loadData();
+      const mergedData = JSON.parse(JSON.stringify(data));
+      if (mergedData.accounts && Array.isArray(mergedData.accounts)) {
+        mergedData.accounts = mergeAccountsSafely(mergedData.accounts, currentDisk.accounts || []);
+      }
+      saveData(mergedData);
+      return true;
+    } catch (e) {
+      console.error('[SaveData] 保存数据失败:', e);
+      return false;
+    }
+  });
 
   // Account operations
   ipcMain.handle('add-account-oauth', async (_, deviceInfo) => {
@@ -870,15 +931,6 @@ function setupIPC() {
 }
 
 // ===== App Lifecycle =====
-app.whenReady().then(() => {
-  setupIPC();
-  createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
-});
-
 function killProxyProcess() {
   if (proxyProcess && proxyProcess.pid) {
     const pid = proxyProcess.pid;
@@ -910,12 +962,31 @@ function killProxyProcess() {
   }
 }
 
-app.on('before-quit', killProxyProcess);
-app.on('will-quit', killProxyProcess);
-process.on('exit', killProxyProcess);
+if (isElectron && app) {
+  app.whenReady().then(() => {
+    setupIPC();
+    createWindow();
 
-app.on('window-all-closed', () => {
-  killProxyProcess();
-  if (process.platform !== 'darwin') app.quit();
-});
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+
+  app.on('before-quit', killProxyProcess);
+  app.on('will-quit', killProxyProcess);
+  process.on('exit', killProxyProcess);
+
+  app.on('window-all-closed', () => {
+    killProxyProcess();
+    if (process.platform !== 'darwin') app.quit();
+  });
+}
+
+module.exports = {
+  mergeAccountsSafely,
+  terminateProxyProcess,
+  handleTokenRefreshed,
+  getProxyProcess: () => proxyProcess,
+  setProxyProcess: (p) => { proxyProcess = p; },
+};
 

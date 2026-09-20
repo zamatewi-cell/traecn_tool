@@ -239,6 +239,9 @@ func (p *TraeProxy) streamEvents(body io.Reader, model string, handle StreamHand
 	reader := sse.NewReader(body)
 	handle, flush := WrapStreamHandler(handle)
 
+	var hasOutput bool
+	var finished bool
+
 	for {
 		evt, err := reader.ReadEvent()
 		if err == io.EOF {
@@ -253,11 +256,22 @@ func (p *TraeProxy) streamEvents(body io.Reader, model string, handle StreamHand
 
 		for _, se := range parseUpstreamEvent(evt.Event, evt.Data) {
 			switch se.Type {
+			case EventText:
+				if se.Text != "" {
+					hasOutput = true
+				}
+			case EventReasoning:
+				if se.Reasoning != "" {
+					hasOutput = true
+				}
+			case EventToolCall:
+				hasOutput = true
 			case EventQueue:
 				se.QueueMessage = fmt.Sprintf("Queue position: %d", se.QueuePosition)
 				p.queue.SetQueueStatus(model, se.QueuePosition, se.QueueMessage)
 				p.logger.Info("queue status", "model", model, "position", se.QueuePosition)
 			case EventFinish:
+				finished = true
 				p.queue.SetQueueStatus(model, 0, "")
 			}
 			if err := handle(se); err != nil {
@@ -272,6 +286,11 @@ func (p *TraeProxy) streamEvents(body io.Reader, model string, handle StreamHand
 	}
 
 	p.queue.SetQueueStatus(model, 0, "")
+
+	if hasOutput && !finished {
+		return fmt.Errorf("legacy stream ended unexpectedly without finish: %w", io.ErrUnexpectedEOF)
+	}
+
 	return nil
 }
 

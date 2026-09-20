@@ -2,8 +2,10 @@ package protect
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -192,3 +194,81 @@ func TestLimiter_AcquireContext_Cancellation(t *testing.T) {
 	}
 	rel2()
 }
+
+// TestLimiter_MinInterval_ConcurrentThunderingHerdAndCancellation 验证反例 7：
+// 在 10 个高并发请求同时涌入且包含 Context 取消的极端场景下，
+// 互斥锁保护下的 Re-check Loop 确保任意相邻两个成功放行的请求间隔严格 >= 235ms，
+// 彻底消除由于等待前解锁导致的惊群连环 0ms 放行回归。
+func TestLimiter_MinInterval_ConcurrentThunderingHerdAndCancellation(t *testing.T) {
+	minWait := 250 * time.Millisecond
+	l := NewLimiter(0, minWait)
+
+	// 先执行一次基准请求占位，使 lastAt 确立为当前时间，确保后续并发涌入的请求必须排队等待 minWait
+	rel0 := l.Acquire()
+	rel0()
+
+	concurrency := 10
+	startBarrier := make(chan struct{})
+	var wg sync.WaitGroup
+
+	var mu sync.Mutex
+	var releaseTimes []time.Time
+	var cancelCount int32
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			var ctx context.Context
+			var cancel context.CancelFunc
+
+			if idx >= 8 {
+				// 后 2 个 goroutine 设置 50ms 极短超时模拟取消
+				ctx, cancel = context.WithTimeout(context.Background(), 50*time.Millisecond)
+				defer cancel()
+			} else {
+				ctx = context.Background()
+			}
+
+			<-startBarrier // 栅栏同时放行，制造瞬时高并发
+
+			rel, err := l.AcquireContext(ctx)
+			if err != nil {
+				atomic.AddInt32(&cancelCount, 1)
+				return
+			}
+			now := time.Now()
+			mu.Lock()
+			releaseTimes = append(releaseTimes, now)
+			mu.Unlock()
+			rel()
+		}(i)
+	}
+
+	close(startBarrier)
+	wg.Wait()
+
+	if cancelCount != 2 {
+		t.Fatalf("expected exactly 2 cancelled requests, got %d", cancelCount)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(releaseTimes) != 8 {
+		t.Fatalf("expected 8 successful acquires, got %d", len(releaseTimes))
+	}
+
+	sort.Slice(releaseTimes, func(i, j int) bool {
+		return releaseTimes[i].Before(releaseTimes[j])
+	})
+
+	// 验证相邻请求之间的放行间隔严格 >= 235ms (250ms - 15ms 调度容差)
+	for i := 1; i < len(releaseTimes); i++ {
+		gap := releaseTimes[i].Sub(releaseTimes[i-1])
+		if gap < 235*time.Millisecond {
+			t.Fatalf("THUNDERING HERD VIOLATION: gap between acquire %d and %d was %v, strictly expected >= 235ms",
+				i-1, i, gap)
+		}
+	}
+}
+

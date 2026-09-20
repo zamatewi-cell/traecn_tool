@@ -97,6 +97,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
       api().onProxyLog((log: string) => get().addProxyLog(log));
       api().onProxyStatus((status: { running: boolean }) => set({ proxyRunning: status.running }));
 
+      // 订阅主进程凭据刷新推送，原子更新渲染层内存快照（严禁调用 save()，防止写盘循环）
+      (api() as any).onAccountUpdated?.((updatedAcc: Account) => {
+        if (!updatedAcc || !updatedAcc.id) return;
+        set((state) => ({
+          accounts: state.accounts.map((a) =>
+            a.id === updatedAcc.id
+              ? {
+                  ...a,
+                  token: updatedAcc.token,
+                  refreshToken: updatedAcc.refreshToken || a.refreshToken,
+                  expiredAt: updatedAcc.expiredAt || a.expiredAt,
+                  refreshExpiredAt: updatedAcc.refreshExpiredAt || a.refreshExpiredAt,
+                  lastUsed: updatedAcc.lastUsed || a.lastUsed,
+                }
+              : a
+          ),
+        }));
+      });
+
       // Check backend health and fetch models with auth
       await get().checkBackendHealth();
       await get().fetchAvailableModels();

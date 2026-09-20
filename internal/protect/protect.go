@@ -266,8 +266,13 @@ func (l *Limiter) AcquireContext(ctx context.Context) (release func(), err error
 	}
 	if l.minWait > 0 {
 		l.mu.Lock()
-		d := time.Since(l.lastAt)
-		if d < l.minWait {
+		for {
+			now := time.Now()
+			d := now.Sub(l.lastAt)
+			if d >= l.minWait {
+				l.lastAt = now
+				break
+			}
 			wait := l.minWait - d
 			l.mu.Unlock()
 			select {
@@ -280,7 +285,6 @@ func (l *Limiter) AcquireContext(ctx context.Context) (release func(), err error
 			}
 			l.mu.Lock()
 		}
-		l.lastAt = time.Now()
 		l.mu.Unlock()
 	}
 	return func() {

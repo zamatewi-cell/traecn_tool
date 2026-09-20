@@ -31,6 +31,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   proxyStatus: () => ipcRenderer.invoke('proxy-status'),
   onProxyLog: (callback) => ipcRenderer.on('proxy-log', (_, log) => callback(log)),
   onProxyStatus: (callback) => ipcRenderer.on('proxy-status', (_, status) => callback(status)),
+  onAccountUpdated: (callback) => {
+    const handler = (_, acc) => callback(acc);
+    ipcRenderer.on('account-updated', handler);
+    return () => ipcRenderer.removeListener('account-updated', handler);
+  },
 
   // System
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),

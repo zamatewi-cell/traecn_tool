@@ -90,6 +90,15 @@ export default function SettingsPage() {
         return;
       }
 
+      const isMaskedSecret = (val?: string) => {
+        if (!val || typeof val !== 'string') return false;
+        const s = val.trim();
+        if (/[\*]{3,}|[\uFF0A]{3,}/.test(s)) return true;
+        if (/已脱敏|脱敏保护|REDACTED|masked/i.test(s)) return true;
+        if (/\.{3,}$|…$/.test(s)) return true;
+        return false;
+      };
+
       const backup = res.data;
       if (backup._exportType === 'sanitized_accounts_export') {
         alert('【恢复中止】您选择的文件是「脱敏账号列表」，其中的凭据已脱敏，无法用于数据恢复！请选择全量数据备份文件。');
@@ -98,6 +107,15 @@ export default function SettingsPage() {
 
       const accountsToRestore = backup.accounts || (Array.isArray(backup) ? backup : []);
       const proxyConfigToRestore = backup.proxyConfig || null;
+
+      // 强校验拦截防线：逐账号排查是否混入了脱敏伪凭据
+      const hasMaskedAccount = accountsToRestore.some(
+        (a: any) => isMaskedSecret(a?.token) || isMaskedSecret(a?.refreshToken)
+      );
+      if (hasMaskedAccount) {
+        alert('【恢复中止】备份文件中检测到包含脱敏伪凭据（如含有省略号或脱敏掩码），无法用于恢复真实鉴权凭据！请选择包含完整凭据的全量备份。');
+        return;
+      }
 
       if (!accountsToRestore.length && !proxyConfigToRestore) {
         alert('所选文件不包含有效的账号或代理配置数据！');

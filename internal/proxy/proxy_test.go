@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -282,6 +283,52 @@ func TestTraeProxy_streamEvents(t *testing.T) {
 	if status.InQueue {
 		t.Error("queue monitor still InQueue after stream end")
 	}
+}
+
+// TestTraeProxy_streamEvents_UnexpectedEOF 验证任务 7 [P2-5]：
+// Legacy 通道在接收到部分文本内容后，若上游异常断流（未收到 finish 事件即遭遇 EOF），
+// streamEvents 必须准确校验并返回 io.ErrUnexpectedEOF，严禁将异常截断静默判定为正常完成。
+func TestTraeProxy_streamEvents_UnexpectedEOF(t *testing.T) {
+	tokens := auth.NewTokenProvider()
+	logger := newTestLogger()
+	p := NewTraeProxy(tokens, logger)
+
+	t.Run("unexpected EOF after text output returns ErrUnexpectedEOF", func(t *testing.T) {
+		// 上游在输出部分文本后直接 EOF 中断，未下发 [DONE] 或 finish 事件
+		sseData := "data: {\"choices\":[{\"delta\":{\"content\":\"Hello World, this is an incomplete stream...\"}}]}\n\n"
+		body := io.NopCloser(strings.NewReader(sseData))
+
+		var texts []string
+		err := p.streamEvents(body, "test-model", func(evt *StreamEvent) error {
+			if evt.Type == EventText {
+				texts = append(texts, evt.Text)
+			}
+			return nil
+		})
+
+		if err == nil {
+			t.Fatalf("expected ErrUnexpectedEOF on truncated stream, got nil")
+		}
+		if !errors.Is(err, io.ErrUnexpectedEOF) {
+			t.Fatalf("expected error to wrap io.ErrUnexpectedEOF, got: %v", err)
+		}
+		if len(texts) == 0 {
+			t.Fatalf("expected some text to be received before premature EOF")
+		}
+	})
+
+	t.Run("clean EOF with finish or [DONE] returns nil", func(t *testing.T) {
+		sseData := "data: {\"choices\":[{\"delta\":{\"content\":\"Complete message\"}}]}\n\n" +
+			"data: [DONE]\n\n"
+		body := io.NopCloser(strings.NewReader(sseData))
+
+		err := p.streamEvents(body, "test-model", func(evt *StreamEvent) error {
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("expected nil error on clean stream, got: %v", err)
+		}
+	})
 }
 
 // TestTraeProxy_ChatCompletion_NoTokens tests error handling when no tokens available

@@ -98,8 +98,8 @@ jobs:
             echo "VAL=${RAW_VER}" >> $GITHUB_OUTPUT
             echo "PKG_TAG=v${RAW_VER}" >> $GITHUB_OUTPUT
           else
-            echo "VAL=1.0.0-dev.${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-            echo "PKG_TAG=v1.0.0-dev.${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+            echo "VAL=1.0.1-dev.${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+            echo "PKG_TAG=v1.0.1-dev.${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
           fi
 
       - name: Build Binary

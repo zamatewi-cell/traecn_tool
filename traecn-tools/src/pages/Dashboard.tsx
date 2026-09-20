@@ -14,15 +14,19 @@ export default function Dashboard() {
   } = useAppStore();
 
   const [refreshing, setRefreshing] = useState(false);
+  const [appVersion, setAppVersion] = useState('1.0.1');
 
   const currentAccount = accounts.find((a) => a.id === currentAccountId);
   const activeAccounts = accounts.filter((a) => !a.disabled);
   const totalAccounts = accounts.length;
 
-  // Check backend health on mount
+  // Check backend health & version on mount
   useEffect(() => {
     checkBackendHealth();
     fetchAvailableModels();
+    window.electronAPI?.getAppVersion?.().then((ver) => {
+      if (ver) setAppVersion(ver);
+    }).catch(() => {});
   }, []);
 
   // 真实刷新
@@ -34,6 +38,12 @@ export default function Dashboard() {
     } finally {
       setTimeout(() => setRefreshing(false), 500);
     }
+  };
+
+  const maskSecret = (secret?: string) => {
+    if (!secret) return '';
+    if (secret.length <= 10) return '*** (已脱敏)';
+    return `${secret.slice(0, 6)}***${secret.slice(-4)} (已脱敏保护)`;
   };
 
   // 真实导出账号数据
@@ -51,14 +61,16 @@ export default function Dashboard() {
         disabled: a.disabled,
         scope: a.scope,
         region: a.region,
-        token: a.token ? `${a.token.slice(0, 8)}...` : '',
+        token: a.token ? maskSecret(a.token) : '',
+        refreshToken: a.refreshToken ? maskSecret(a.refreshToken) : '',
         lastUsed: a.lastUsed,
       }));
       const result = await window.electronAPI?.exportAccounts({
         data: {
+          _exportType: 'sanitized_accounts_export',
           accounts: sanitized,
           exportTime: new Date().toISOString(),
-          version: '1.0.0',
+          version: appVersion,
         },
         defaultFileName: `traecn-accounts-export-${new Date().toISOString().slice(0, 10)}.json`,
       });

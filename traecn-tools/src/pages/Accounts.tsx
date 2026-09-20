@@ -12,7 +12,7 @@ type ViewMode = 'list' | 'grid';
 type FilterTab = 'all' | 'active' | 'disabled' | string;
 
 export default function Accounts() {
-  const { accounts, addAccount, updateAccount, removeAccount, switchAccount, setAccountDisabled } = useAppStore();
+  const { accounts, addAccount, updateAccount, removeAccount, switchAccount, setAccountDisabled, proxyRunning, startProxy, stopProxy } = useAppStore();
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTab, setFilterTab] = useState<FilterTab>('all');
@@ -137,7 +137,11 @@ export default function Accounts() {
 
   const isMaskedSecret = (val?: string) => {
     if (!val || typeof val !== 'string') return false;
-    return /[\*]{3,}|已脱敏/i.test(val);
+    const s = val.trim();
+    if (/[\*]{3,}|[\uFF0A]{3,}/.test(s)) return true;
+    if (/已脱敏|脱敏保护|REDACTED|masked/i.test(s)) return true;
+    if (/\.{3,}$|…$/.test(s)) return true;
+    return false;
   };
 
   const sanitizeAccountForExport = (acc: any) => ({
@@ -250,10 +254,17 @@ export default function Accounts() {
 
   const handleExportSingle = async (acc: any) => {
     const sanitized = sanitizeAccountForExport(acc);
+    const exportPayload = {
+      _exportType: 'sanitized_accounts_export',
+      version: '1.0.1',
+      exportedAt: new Date().toISOString(),
+      account: sanitized,
+      accounts: [sanitized],
+    };
     const defaultFileName = `${acc.email || acc.id}-sanitized.json`;
 
     if (window.electronAPI?.exportAccounts) {
-      const res = await window.electronAPI.exportAccounts({ data: sanitized, defaultFileName });
+      const res = await window.electronAPI.exportAccounts({ data: exportPayload, defaultFileName });
       if (!res.canceled && res.success) {
         alert(`账号 ${acc.email || acc.id} 脱敏信息导出成功: ${res.filePath}`);
       } else if (res.error) {
@@ -262,7 +273,7 @@ export default function Accounts() {
       return;
     }
 
-    const data = JSON.stringify(sanitized, null, 2);
+    const data = JSON.stringify(exportPayload, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -270,6 +281,27 @@ export default function Accounts() {
     a.download = defaultFileName;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleSwitchAccount = async (id: string) => {
+    if (proxyRunning) {
+      const confirmed = window.confirm('当前代理服务正在运行，切换账号需重启代理服务即时生效。是否立即重启服务？');
+      if (!confirmed) {
+        return;
+      }
+      switchAccount(id);
+      try {
+        await stopProxy();
+        const startRes = await startProxy();
+        if (!startRes.success) {
+          alert('重启代理服务失败: ' + (startRes.error || '未知错误'));
+        }
+      } catch (err: any) {
+        alert('重启代理服务异常: ' + (err?.message || err));
+      }
+    } else {
+      switchAccount(id);
+    }
   };
 
   const allTags = [...new Set(accounts.flatMap(a => a.tags || []))];
@@ -472,7 +504,7 @@ export default function Accounts() {
                   <ActionButton
                     icon={<ArrowRightLeft size={14} />}
                     title="切换到此账号"
-                    onClick={() => switchAccount(account.id)}
+                    onClick={() => handleSwitchAccount(account.id)}
                     className={account.isCurrent ? 'text-green-400' : ''}
                   />
                   <ActionButton
@@ -525,7 +557,7 @@ export default function Accounts() {
                 {/* 卡片快速切换或删除 */}
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => switchAccount(account.id)}
+                    onClick={() => handleSwitchAccount(account.id)}
                     title={account.isCurrent ? '当前已生效' : '切换到该账号'}
                     disabled={account.isCurrent}
                     className="p-1 hover:bg-dark-600 rounded transition-colors text-dark-300 hover:text-white disabled:opacity-40"

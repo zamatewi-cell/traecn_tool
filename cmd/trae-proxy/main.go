@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -90,6 +91,38 @@ func parseLogLevel(levelStr string) slog.Level {
 	}
 }
 
+// buildTokenRefreshedHandler constructs the token refresh callback.
+// If isDesktopIPC is false (standard CLI mode), it completely withholds plaintext credentials,
+// only logging a sanitized notification via logger to prevent credentials leaking to stdout/log files.
+func buildTokenRefreshedHandler(isDesktopIPC bool, logger *slog.Logger) func(accountID, accountName string, tok *auth.TokenInfo) {
+	return func(accountID, accountName string, tok *auth.TokenInfo) {
+		if !isDesktopIPC {
+			if logger != nil {
+				logger.Info("account token refreshed successfully (credentials withheld in CLI mode)",
+					"id", accountID,
+					"account", accountName,
+					"expires_at", tok.ExpiresAt.Format(time.RFC3339),
+				)
+			}
+			return
+		}
+
+		payload := map[string]interface{}{
+			"event":              "token_refreshed",
+			"id":                 accountID,
+			"account":            accountName,
+			"user_id":            tok.UserID,
+			"token":              tok.AccessToken,
+			"refresh_token":      tok.RefreshToken,
+			"expires_at":         tok.ExpiresAt.Format(time.RFC3339),
+			"refresh_expires_at": tok.RefreshExpiresAt.Format(time.RFC3339),
+			"timestamp":          time.Now().Unix(),
+		}
+		raw, _ := json.Marshal(payload)
+		fmt.Printf("__TRAE_EVENT__:%s\n", string(raw))
+	}
+}
+
 func main() {
 	configPath := flag.String("config", "config.json", "config file path or 'stdin'/'-' to read from stdin")
 	listen := flag.String("listen", "", "listen address (default: 127.0.0.1:9090, or 0.0.0.0:9090 if allow-lan)")
@@ -98,6 +131,7 @@ func main() {
 	logLevel := flag.String("log-level", "info", "log level (debug/info/warn/error)")
 	apiKey := flag.String("api-key", "", "API key for authentication (optional, comma-separated for multiple keys)")
 	dbPath := flag.String("db-path", "", "path to sqlite database file (default: data/trae_proxy.db)")
+	desktopIPC := flag.Bool("desktop-ipc", false, "enable desktop IPC structured event pipeline via stdout (SECURE: only for desktop manager)")
 	showVersion := flag.Bool("version", false, "show version")
 	flag.Parse()
 
@@ -199,21 +233,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Structured event callback for token refresh
-	onTokenRefreshed := func(accountName string, tok *auth.TokenInfo) {
-		payload := map[string]interface{}{
-			"event":              "token_refreshed",
-			"account":            accountName,
-			"user_id":            tok.UserID,
-			"token":              tok.AccessToken,
-			"refresh_token":      tok.RefreshToken,
-			"expires_at":         tok.ExpiresAt.Format(time.RFC3339),
-			"refresh_expires_at": tok.RefreshExpiresAt.Format(time.RFC3339),
-			"timestamp":          time.Now().Unix(),
-		}
-		raw, _ := json.Marshal(payload)
-		fmt.Printf("__TRAE_EVENT__:%s\n", string(raw))
-	}
+	isDesktopIPC := *desktopIPC || os.Getenv("TRAE_DESKTOP_IPC") == "1"
+	onTokenRefreshed := buildTokenRefreshedHandler(isDesktopIPC, logger)
 
 	// Initialize credential pool with proactive refresh + circuit breaking
 	tp := auth.NewPool(&auth.PoolOptions{
@@ -226,10 +247,11 @@ func main() {
 	autoDiscoverDisabled := (cfg.AutoDiscover != nil && !*cfg.AutoDiscover)
 
 	if len(cfg.Accounts) > 0 {
-		for _, acc := range cfg.Accounts {
+		for i, acc := range cfg.Accounts {
 			id := acc.ID
 			if id == "" {
-				id = acc.Name
+				h := sha256.Sum256([]byte(fmt.Sprintf("%d:%s:%s", i, acc.Name, acc.Token)))
+				id = fmt.Sprintf("acc_%d_%x", i, h[:4])
 			}
 			switch {
 			case acc.Token != "":

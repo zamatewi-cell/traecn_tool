@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -29,6 +30,7 @@ type responsesRequest struct {
 	Instructions    string          `json:"instructions,omitempty"`
 	Input           json.RawMessage `json:"input"`
 	Tools           []responsesTool `json:"tools,omitempty"`
+	ToolChoice      json.RawMessage `json:"tool_choice,omitempty"`
 	Stream          bool            `json:"stream,omitempty"`
 	MaxOutputTokens int             `json:"max_output_tokens,omitempty"`
 	Temperature     *float64        `json:"temperature,omitempty"`
@@ -59,7 +61,10 @@ type inputItem struct {
 
 // toUpstream converts the Responses API request into the upstream payload.
 func (r *responsesRequest) toUpstream() (*proxy.ChatCompletionRequest, error) {
-	out := &proxy.ChatCompletionRequest{Stream: r.Stream}
+	out := &proxy.ChatCompletionRequest{
+		Stream:     r.Stream,
+		ToolChoice: r.ToolChoice,
+	}
 	if m := models.Default().Resolve(r.Model); m != nil {
 		out.ModelName = m.ModelID
 	} else {
@@ -131,6 +136,8 @@ func (r *responsesRequest) toUpstream() (*proxy.ChatCompletionRequest, error) {
 		}
 		out.Tools = append(out.Tools, proxy.Tool{Type: typ, Function: spec})
 	}
+
+	out.ToolChoice = r.ToolChoice
 
 	return out, nil
 }
@@ -295,6 +302,16 @@ func (h *ResponsesHandler) HandleResponses(w http.ResponseWriter, r *http.Reques
 	}
 	upstream.Context = r.Context()
 
+	// 统一非 Chat 接口工具前置守卫：针对不支持工具的渠道直接返回 400，严禁 502
+	if models.ResolveChannel(upstream.ModelName) == models.ChannelAgentTask {
+		if err := proxy.ValidateAgentTaskRequest(upstream); err != nil {
+			if errors.Is(err, proxy.ErrAgentTaskToolsUnsupported) || strings.Contains(err.Error(), "unsupported_channel_feature") {
+				writeProtocolError(w, http.StatusBadRequest, "unsupported_channel_feature", err.Error())
+				return
+			}
+		}
+	}
+
 	if req.Stream {
 		h.handleStreaming(w, upstream, &req)
 	} else {
@@ -305,6 +322,10 @@ func (h *ResponsesHandler) HandleResponses(w http.ResponseWriter, r *http.Reques
 func (h *ResponsesHandler) handleNonStreaming(w http.ResponseWriter, upstream *proxy.ChatCompletionRequest, req *responsesRequest) {
 	c, err := collect(h.proxy, upstream)
 	if err != nil {
+		if errors.Is(err, proxy.ErrAgentTaskToolsUnsupported) || strings.Contains(err.Error(), "unsupported_channel_feature") {
+			writeProtocolError(w, http.StatusBadRequest, "unsupported_channel_feature", err.Error())
+			return
+		}
 		writeProtocolError(w, http.StatusBadGateway, "api_error", "Upstream error: "+err.Error())
 		return
 	}
@@ -313,12 +334,21 @@ func (h *ResponsesHandler) handleNonStreaming(w http.ResponseWriter, upstream *p
 
 type streamItemMeta struct {
 	id          string
-	typ         string // "reasoning", "message", "function_call"
+	typ         string // "reasoning", "message"
 	role        string
 	callID      string
 	name        string
 	outputIndex int
 	textBuffer  strings.Builder
+}
+
+type toolItemStreamMeta struct {
+	fcID         string
+	callID       string
+	name         string
+	outputIndex  int
+	textBuffer   strings.Builder
+	addedEmitted bool
 }
 
 func (h *ResponsesHandler) handleStreaming(w http.ResponseWriter, upstream *proxy.ChatCompletionRequest, req *responsesRequest) {
@@ -353,7 +383,8 @@ func (h *ResponsesHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 	itemIndex := -1
 	partOpen := false
 	var currentItem *streamItemMeta
-	toolItemMap := map[int]int{}
+	toolStreamMap := make(map[int]*toolItemStreamMeta)
+	var toolStreamOrder []int
 
 	closePart := func() {
 		if partOpen && currentItem != nil && currentItem.typ == "message" {
@@ -422,10 +453,6 @@ func (h *ResponsesHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 						"annotations": []interface{}{},
 					},
 				}
-			case "function_call":
-				itemObj["call_id"] = currentItem.callID
-				itemObj["name"] = currentItem.name
-				itemObj["arguments"] = currentItem.textBuffer.String()
 			}
 
 			em.emit("response.output_item.done", map[string]interface{}{
@@ -539,33 +566,37 @@ func (h *ResponsesHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 			})
 		case proxy.EventToolCall:
 			tc := evt.ToolCall
-			acc, exists := c.toolCalls[tc.Index]
-			if !exists {
-				acc = &toolCallAcc{typ: "function", id: tc.ID}
-				c.toolCalls[tc.Index] = acc
-				c.toolOrder = append(c.toolOrder, tc.Index)
+
+			// 若此前正在输出文本或思考项，将其安全闭合；绝不关闭其他正在并行的工具！
+			if itemOpen && currentItem != nil {
 				closeItem()
+			}
+
+			toolMeta, exists := toolStreamMap[tc.Index]
+			if !exists {
 				itemIndex++
-				toolItemMap[tc.Index] = itemIndex
 				callID := tc.ID
 				if callID == "" {
 					callID = "call_" + uuid.New().String()
 				}
 				fcID := "fc_" + uuid.New().String()
-				fcKey := fmt.Sprintf("function_call:%d", len(c.toolOrder)-1)
-				stableIDs[fcKey] = fcID
-				currentItem = &streamItemMeta{
-					id:          fcID,
-					typ:         "function_call",
+				toolMeta = &toolItemStreamMeta{
+					fcID:        fcID,
 					callID:      callID,
 					name:        tc.Name,
 					outputIndex: itemIndex,
 				}
+				toolStreamMap[tc.Index] = toolMeta
+				toolStreamOrder = append(toolStreamOrder, tc.Index)
+
+				fcKey := fmt.Sprintf("function_call:%d", len(toolStreamOrder)-1)
+				stableIDs[fcKey] = fcID
+
 				em.emit("response.output_item.added", map[string]interface{}{
 					"type":            "response.output_item.added",
 					"sequence_number": nextSeq(),
 					"response_id":     respID,
-					"output_index":    itemIndex,
+					"output_index":    toolMeta.outputIndex,
 					"item": map[string]interface{}{
 						"id":        fcID,
 						"type":      "function_call",
@@ -575,37 +606,39 @@ func (h *ResponsesHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 						"arguments": "",
 					},
 				})
-				itemOpen = true
+				toolMeta.addedEmitted = true
+			}
+
+			acc, existsAcc := c.toolCalls[tc.Index]
+			if !existsAcc {
+				acc = &toolCallAcc{typ: "function", id: toolMeta.callID, name: tc.Name}
+				c.toolCalls[tc.Index] = acc
+				c.toolOrder = append(c.toolOrder, tc.Index)
 			}
 			if tc.ID != "" {
 				acc.id = tc.ID
+				toolMeta.callID = tc.ID
 			}
 			if tc.Name != "" {
 				acc.name = tc.Name
-				if currentItem != nil {
-					currentItem.name = tc.Name
-				}
+				toolMeta.name = tc.Name
 			}
 			acc.args += tc.Arguments
 			if tc.Arguments != "" {
-				if currentItem != nil {
-					currentItem.textBuffer.WriteString(tc.Arguments)
-				}
-				targetItemID := ""
-				if currentItem != nil {
-					targetItemID = currentItem.id
-				}
+				toolMeta.textBuffer.WriteString(tc.Arguments)
 				em.emit("response.function_call_arguments.delta", map[string]interface{}{
 					"type":            "response.function_call_arguments.delta",
 					"sequence_number": nextSeq(),
 					"response_id":     respID,
-					"item_id":         targetItemID,
-					"output_index":    toolItemMap[tc.Index],
+					"item_id":         toolMeta.fcID,
+					"output_index":    toolMeta.outputIndex,
 					"delta":           tc.Arguments,
 				})
 			}
 		case proxy.EventFinish:
-			c.finishReason = evt.FinishReason
+			if c.finishReason == "" || (evt.FinishReason != "stop" && evt.FinishReason != "") {
+				c.finishReason = evt.FinishReason
+			}
 		case proxy.EventUsage:
 			c.usage = evt.Usage
 		case proxy.EventError:
@@ -630,15 +663,41 @@ func (h *ResponsesHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 
 	closeItem()
 
+	// 按顺序为每一个并行的工具调用发射 output_item.done
+	for _, idx := range toolStreamOrder {
+		meta := toolStreamMap[idx]
+		itemStatus := "completed"
+		if c.finishReason == "length" || c.finishReason == "max_tokens" || c.finishReason == "incomplete" {
+			itemStatus = "incomplete"
+		}
+		em.emit("response.output_item.done", map[string]interface{}{
+			"type":            "response.output_item.done",
+			"sequence_number": nextSeq(),
+			"response_id":     respID,
+			"output_index":    meta.outputIndex,
+			"item": map[string]interface{}{
+				"id":        meta.fcID,
+				"type":      "function_call",
+				"status":    itemStatus,
+				"call_id":   meta.callID,
+				"name":      meta.name,
+				"arguments": meta.textBuffer.String(),
+			},
+		})
+	}
+
 	completed := responseObject(respID, req.Model, c, stableIDs)
+	status, _ := completed["status"].(string)
 	em.emit("response.done", map[string]interface{}{
 		"type":            "response.done",
 		"sequence_number": nextSeq(),
 		"response":        completed,
 	})
-	em.emit("response.completed", map[string]interface{}{
-		"type":            "response.completed",
-		"sequence_number": nextSeq(),
-		"response":        completed,
-	})
+	if status == "completed" {
+		em.emit("response.completed", map[string]interface{}{
+			"type":            "response.completed",
+			"sequence_number": nextSeq(),
+			"response":        completed,
+		})
+	}
 }

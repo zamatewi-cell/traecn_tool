@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard, Users, Network, ScrollText,
@@ -14,6 +14,13 @@ const navItems = [
 ];
 
 export default function Layout() {
+  const [appVersion, setAppVersion] = useState('1.0.1');
+
+  useEffect(() => {
+    window.electronAPI?.getAppVersion?.().then((ver) => {
+      if (ver) setAppVersion(ver);
+    }).catch(() => {});
+  }, []);
   return (
     <div className="flex flex-col h-screen bg-dark-950">
       {/* Title Bar */}
@@ -63,7 +70,7 @@ export default function Layout() {
             ))}
           </div>
           <div className="p-3 border-t border-dark-700/30">
-            <div className="text-xs text-dark-500 text-center">v1.0.0</div>
+            <div className="text-xs text-dark-500 text-center">v{appVersion}</div>
           </div>
         </nav>
 

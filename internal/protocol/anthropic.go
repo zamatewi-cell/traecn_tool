@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -105,7 +106,8 @@ func systemText(raw json.RawMessage) string {
 // toUpstream converts the Anthropic request into the upstream payload.
 func (r *anthropicRequest) toUpstream() (*proxy.ChatCompletionRequest, error) {
 	out := &proxy.ChatCompletionRequest{
-		Stream: r.Stream,
+		Stream:     r.Stream,
+		ToolChoice: r.ToolChoice,
 	}
 	if m := models.Default().Resolve(r.Model); m != nil {
 		out.ModelName = m.ModelID
@@ -196,6 +198,8 @@ func (r *anthropicRequest) toUpstream() (*proxy.ChatCompletionRequest, error) {
 		})
 	}
 
+	out.ToolChoice = r.ToolChoice
+
 	return out, nil
 }
 
@@ -255,6 +259,16 @@ func (h *AnthropicHandler) HandleMessages(w http.ResponseWriter, r *http.Request
 	}
 	upstream.Context = r.Context()
 
+	// 统一非 Chat 接口工具前置守卫：针对不支持工具的渠道直接返回 400，严禁 502
+	if models.ResolveChannel(upstream.ModelName) == models.ChannelAgentTask {
+		if err := proxy.ValidateAgentTaskRequest(upstream); err != nil {
+			if errors.Is(err, proxy.ErrAgentTaskToolsUnsupported) || strings.Contains(err.Error(), "unsupported_channel_feature") {
+				writeProtocolError(w, http.StatusBadRequest, "unsupported_channel_feature", err.Error())
+				return
+			}
+		}
+	}
+
 	if req.Stream {
 		h.handleStreaming(w, upstream, req.Model)
 	} else {
@@ -265,6 +279,10 @@ func (h *AnthropicHandler) HandleMessages(w http.ResponseWriter, r *http.Request
 func (h *AnthropicHandler) handleNonStreaming(w http.ResponseWriter, upstream *proxy.ChatCompletionRequest, model string) {
 	c, err := collect(h.proxy, upstream)
 	if err != nil {
+		if errors.Is(err, proxy.ErrAgentTaskToolsUnsupported) || strings.Contains(err.Error(), "unsupported_channel_feature") {
+			writeProtocolError(w, http.StatusBadRequest, "unsupported_channel_feature", err.Error())
+			return
+		}
 		writeProtocolError(w, http.StatusBadGateway, "api_error", "Upstream error: "+err.Error())
 		return
 	}

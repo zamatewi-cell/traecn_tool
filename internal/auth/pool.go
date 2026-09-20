@@ -67,12 +67,18 @@ func DirectTokenInfo(token string) *TokenInfo {
 
 // IsExpired reports whether the access token has hard-expired.
 func (t *TokenInfo) IsExpired() bool {
+	if t.ExpiresAt.IsZero() {
+		return false
+	}
 	return !time.Now().Before(t.ExpiresAt)
 }
 
 // NeedsRefresh reports whether the token expires within the early-refresh
 // window (or already expired).
 func (t *TokenInfo) NeedsRefresh(early time.Duration) bool {
+	if t.ExpiresAt.IsZero() {
+		return false
+	}
 	return time.Now().Add(early).After(t.ExpiresAt)
 }
 
@@ -112,7 +118,7 @@ type PoolOptions struct {
 	// Logger for refresh/failure diagnostics; nil discards.
 	Logger *slog.Logger
 	// OnTokenRefreshed is triggered immediately after a successful API token refresh.
-	OnTokenRefreshed func(accountName string, token *TokenInfo)
+	OnTokenRefreshed func(accountID, accountName string, token *TokenInfo)
 }
 
 func (o *PoolOptions) withDefaults() PoolOptions {
@@ -230,10 +236,7 @@ func (p *Pool) AddAccountWithCredentialsAndID(id, name, token, refreshToken, use
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// 真实保底逻辑：若无明确过期时间，默认赋予 2 小时短期兜底，而非 10 年伪造
-	if expiresAt.IsZero() {
-		expiresAt = time.Now().Add(2 * time.Hour)
-	}
+	// 静态凭据或未显式提供到期时间的 Token：保留零值，由上游 401 真实驱动失效，绝不人为强加 2 小时
 	if refreshExpiresAt.IsZero() && refreshToken != "" {
 		refreshExpiresAt = time.Now().Add(30 * 24 * time.Hour)
 	}
@@ -288,7 +291,7 @@ func (p *Pool) ensureFresh(acc *Account) error {
 			nt.AccountID, nt.TenantID, nt.UserID = tok.AccountID, tok.TenantID, tok.UserID
 			acc.token, acc.stale = nt, false
 			if p.opts.OnTokenRefreshed != nil {
-				p.opts.OnTokenRefreshed(acc.Name, nt)
+				p.opts.OnTokenRefreshed(acc.ID, acc.Name, nt)
 			}
 			return nil
 		}
@@ -402,7 +405,8 @@ func (p *Pool) GetToken() (string, string, error) {
 // ReportFailure lets the forwarding layer report an upstream auth failure
 // (e.g. HTTP 401): the account is marked stale so its credential is forcibly
 // refreshed on next use, and the failure feeds the circuit breaker.
-// It matches by account ID first, and falls back to account Name.
+// It matches strictly by account ID first; fallback to account Name only occurs
+// when there is exactly one account with that name, preventing wrongful marking of healthy accounts.
 func (p *Pool) ReportFailure(accountKey string) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -415,19 +419,25 @@ func (p *Pool) ReportFailure(accountKey string) {
 			return
 		}
 	}
+	// Fallback to name only if unique to prevent collision misattribution
+	var matchedAcc *Account
+	count := 0
 	for _, acc := range p.accounts {
 		if acc.Name == accountKey {
-			acc.mu.Lock()
-			acc.stale = true
-			acc.mu.Unlock()
-			acc.breaker.RecordFailure()
-			return
+			matchedAcc = acc
+			count++
 		}
+	}
+	if count == 1 && matchedAcc != nil {
+		matchedAcc.mu.Lock()
+		matchedAcc.stale = true
+		matchedAcc.mu.Unlock()
+		matchedAcc.breaker.RecordFailure()
 	}
 }
 
 // ReportSuccess records a successful upstream call for the account.
-// It matches by account ID first, and falls back to account Name.
+// It matches strictly by account ID first, and falls back to Name only if unambiguous.
 func (p *Pool) ReportSuccess(accountKey string) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -437,12 +447,29 @@ func (p *Pool) ReportSuccess(accountKey string) {
 			return
 		}
 	}
+	var matchedAcc *Account
+	count := 0
 	for _, acc := range p.accounts {
 		if acc.Name == accountKey {
-			acc.breaker.RecordSuccess()
-			return
+			matchedAcc = acc
+			count++
 		}
 	}
+	if count == 1 && matchedAcc != nil {
+		matchedAcc.breaker.RecordSuccess()
+	}
+}
+
+// FindAccountByID finds an account by its unique ID.
+func (p *Pool) FindAccountByID(id string) (*Account, bool) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for _, acc := range p.accounts {
+		if acc.ID == id {
+			return acc, true
+		}
+	}
+	return nil, false
 }
 
 // AccountInfo holds account summary info.

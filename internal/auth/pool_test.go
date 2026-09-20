@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -314,12 +315,12 @@ func TestPool_AddAccountWithCredentials(t *testing.T) {
 	if acc.token.UserID != "u_123" {
 		t.Errorf("UserID = %v, want u_123", acc.token.UserID)
 	}
-	// 验证时间非零且在当前时间之后（2小时短期兜底而非10年）
-	if acc.token.ExpiresAt.IsZero() || !acc.token.ExpiresAt.After(time.Now()) {
-		t.Errorf("ExpiresAt was not set properly: %v", acc.token.ExpiresAt)
+	// 验证未显式提供过期时间的凭据保持零值，不过期，由上游 401 真实驱动失效
+	if !acc.token.ExpiresAt.IsZero() {
+		t.Errorf("ExpiresAt should remain zero value, got: %v", acc.token.ExpiresAt)
 	}
-	if acc.token.ExpiresAt.After(time.Now().Add(3 * time.Hour)) {
-		t.Errorf("ExpiresAt exceeds 2 hours fallback: %v", acc.token.ExpiresAt)
+	if acc.token.IsExpired() {
+		t.Errorf("token with zero ExpiresAt should not be marked expired")
 	}
 }
 
@@ -334,7 +335,7 @@ func TestPool_OnTokenRefreshedCallback(t *testing.T) {
 
 	opts := &PoolOptions{
 		Refresher: mockRef,
-		OnTokenRefreshed: func(accName string, token *TokenInfo) {
+		OnTokenRefreshed: func(accID, accName string, token *TokenInfo) {
 			callbackCalled = true
 			callbackAcc = accName
 			callbackToken = token.AccessToken
@@ -465,3 +466,130 @@ func TestPool_ActiveAccountPreferredAndFallback_P2_10(t *testing.T) {
 		t.Fatalf("fallback returned (%v, %v), want (token-a, acc-a)", tok, id)
 	}
 }
+
+func TestPool_SameNameDifferentID_IsolationAndAttribution(t *testing.T) {
+	var refreshedID, refreshedName string
+	var refreshMu sync.Mutex
+
+	mockRef := &mockRefresher{
+		newToken: "renewed_token_acc1",
+	}
+
+	p := newTestPool(&PoolOptions{
+		Refresher: mockRef,
+		OnTokenRefreshed: func(id, name string, tok *TokenInfo) {
+			refreshMu.Lock()
+			defer refreshMu.Unlock()
+			refreshedID = id
+			refreshedName = name
+		},
+	})
+
+	// 添加两个同名账号，ID 分别为 acc-1 与 acc-2
+	p.AddAccountWithCredentialsAndID("acc-1", "personal", "tok_old_1", "ref_1", "user_1", time.Now().Add(-time.Hour), time.Now().Add(time.Hour), false)
+	p.AddAccountWithCredentialsAndID("acc-2", "personal", "tok_old_2", "ref_2", "user_2", time.Now().Add(time.Hour), time.Now().Add(time.Hour), false)
+
+	// 1. 触发 acc-1 刷新
+	acc1, ok1 := p.FindAccountByID("acc-1")
+	if !ok1 {
+		t.Fatalf("acc-1 not found")
+	}
+	acc1.mu.Lock()
+	err := p.ensureFresh(acc1)
+	acc1.mu.Unlock()
+	if err != nil {
+		t.Fatalf("acc-1 refresh failed: %v", err)
+	}
+
+	refreshMu.Lock()
+	if refreshedID != "acc-1" || refreshedName != "personal" {
+		t.Fatalf("expected refreshed ID 'acc-1', got id=%q name=%q", refreshedID, refreshedName)
+	}
+	refreshMu.Unlock()
+
+	// 验证 acc-2 凭据丝毫未受影响
+	acc2, ok2 := p.FindAccountByID("acc-2")
+	if !ok2 {
+		t.Fatalf("acc-2 not found")
+	}
+	acc2.mu.Lock()
+	if acc2.token.AccessToken != "tok_old_2" {
+		t.Fatalf("acc-2 token was wrongly overwritten: %s", acc2.token.AccessToken)
+	}
+	acc2.mu.Unlock()
+
+	// 2. 针对 acc-2 上报鉴权失败（模拟上游 401）
+	p.ReportFailure("acc-2")
+
+	acc2.mu.Lock()
+	isStale2 := acc2.stale
+	acc2.mu.Unlock()
+	if !isStale2 {
+		t.Fatalf("expected acc-2 to be marked stale after ReportFailure")
+	}
+
+	acc1.mu.Lock()
+	isStale1 := acc1.stale
+	acc1.mu.Unlock()
+	if isStale1 {
+		t.Fatalf("acc-1 was wrongly marked stale due to name collision!")
+	}
+
+	// 3. 测试歧义同名账号防误杀：若直接以重名 "personal" 上报失败，且池中存在多个同名账号时，绝不随意误杀任何一个
+	p.ReportFailure("personal")
+	acc1.mu.Lock()
+	stale1AfterAmbiguous := acc1.stale
+	acc1.mu.Unlock()
+	if stale1AfterAmbiguous {
+		t.Fatalf("acc-1 was wrongly killed by ambiguous name ReportFailure")
+	}
+}
+
+func TestPool_StaticToken_ValidUntilUpstream401(t *testing.T) {
+	p := newTestPool(nil)
+	staticToken := "permanent-api-key-test"
+	p.AddAccountWithCredentialsAndID("static-1", "static-acc", staticToken, "", "", time.Time{}, time.Time{}, true)
+
+	// 1. 验证添加后 token 的过期时间不被人为篡改为 2 小时，保留零值
+	acc, ok := p.FindAccountByID("static-1")
+	if !ok {
+		t.Fatalf("static-1 account not found")
+	}
+	acc.mu.Lock()
+	expiresAt := acc.token.ExpiresAt
+	acc.mu.Unlock()
+
+	if !expiresAt.IsZero() {
+		t.Fatalf("artificial expiry was wrongly injected: %v, expected zero value", expiresAt)
+	}
+
+	// 2. 模拟即使系统认为时间已经过了 72 小时，IsExpired() 依然为 false
+	acc.mu.Lock()
+	isExpired := acc.token.IsExpired()
+	needsRefresh := acc.token.NeedsRefresh(5 * time.Minute)
+	acc.mu.Unlock()
+
+	if isExpired {
+		t.Fatalf("static token with zero ExpiresAt should never be considered expired locally")
+	}
+	if needsRefresh {
+		t.Fatalf("static token should not need proactive refresh")
+	}
+
+	tok, key, err := p.GetToken()
+	if err != nil || tok != staticToken || key != "static-1" {
+		t.Fatalf("GetToken failed for static token: err=%v, tok=%s, key=%s", err, tok, key)
+	}
+
+	// 3. 由上游 401 真实驱动失效：调用 ReportFailure
+	p.ReportFailure("static-1")
+
+	acc.mu.Lock()
+	stale := acc.stale
+	acc.mu.Unlock()
+
+	if !stale {
+		t.Fatalf("expected account to become stale after ReportFailure driven by upstream 401")
+	}
+}
+
