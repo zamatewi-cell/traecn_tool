@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Settings as SettingsIcon,
-  Database, Download, Trash2, Shield, HardDrive, AlertTriangle, ExternalLink,
+  Database, Download, Upload, Trash2, Shield, HardDrive, AlertTriangle, ExternalLink,
 } from 'lucide-react';
 import { useAppStore } from '../store';
 
@@ -9,11 +9,18 @@ export default function SettingsPage() {
   const { accounts, proxyConfig } = useAppStore();
 
   const [dataDir, setDataDir] = useState('');
+  const [appVersion, setAppVersion] = useState('v1.0.1');
 
   useEffect(() => {
     window.electronAPI?.getDataDir().then((dir) => {
       if (dir) setDataDir(dir);
     }).catch(() => {});
+
+    if (window.electronAPI?.getAppVersion) {
+      window.electronAPI.getAppVersion().then((ver: string) => {
+        if (ver) setAppVersion(`v${ver.replace(/^v/, '')}`);
+      }).catch(() => {});
+    }
   }, []);
 
   const handleOpenDataDir = async () => {
@@ -28,11 +35,12 @@ export default function SettingsPage() {
     }
   };
 
-  // ST1: 真实导出全部数据
+  // ST1: 真实导出全部数据 (全量数据备份)
   const handleExportData = async () => {
     try {
       const backupData = {
-        version: '1.0.0',
+        _backupType: 'full_backup',
+        version: appVersion,
         exportedAt: new Date().toISOString(),
         accounts,
         proxyConfig,
@@ -44,6 +52,7 @@ export default function SettingsPage() {
         const res = await window.electronAPI.exportAccounts({
           data: backupData,
           defaultFileName,
+          title: '导出完整配置与数据备份',
         });
         if (res.canceled) return;
         if (res.success) {
@@ -64,6 +73,68 @@ export default function SettingsPage() {
       URL.revokeObjectURL(url);
     } catch (e: any) {
       alert('导出遇到异常: ' + e?.message);
+    }
+  };
+
+  // ST1.5: 真实从备份恢复数据
+  const handleRestoreData = async () => {
+    try {
+      if (!window.electronAPI?.importAccounts) {
+        alert('当前环境不支持从本地文件恢复数据');
+        return;
+      }
+      const res = await window.electronAPI.importAccounts();
+      if (res.canceled) return;
+      if (!res.success || !res.data) {
+        alert('恢复失败: ' + (res.error || '未能解析备份数据'));
+        return;
+      }
+
+      const backup = res.data;
+      if (backup._exportType === 'sanitized_accounts_export') {
+        alert('【恢复中止】您选择的文件是「脱敏账号列表」，其中的凭据已脱敏，无法用于数据恢复！请选择全量数据备份文件。');
+        return;
+      }
+
+      const accountsToRestore = backup.accounts || (Array.isArray(backup) ? backup : []);
+      const proxyConfigToRestore = backup.proxyConfig || null;
+
+      if (!accountsToRestore.length && !proxyConfigToRestore) {
+        alert('所选文件不包含有效的账号或代理配置数据！');
+        return;
+      }
+
+      if (!confirm(`确定要从该备份中恢复数据吗？\n包含 ${accountsToRestore.length} 个账号及相关设置，当前未保存的配置将被覆盖。`)) {
+        return;
+      }
+
+      // 步骤 1: 停止正在运行的代理服务
+      if (window.electronAPI?.stopProxy) {
+        await window.electronAPI.stopProxy();
+      }
+
+      const currentConfig = useAppStore.getState().proxyConfig;
+      const mergedConfig = proxyConfigToRestore ? { ...currentConfig, ...proxyConfigToRestore } : currentConfig;
+
+      // 步骤 2: 持久化存储
+      if (window.electronAPI?.saveData) {
+        await window.electronAPI.saveData({
+          accounts: accountsToRestore,
+          proxyConfig: mergedConfig,
+          settings: { language: 'zh', theme: 'dark' },
+        });
+      }
+
+      // 步骤 3: 更新 Store
+      useAppStore.setState({
+        accounts: accountsToRestore,
+        proxyConfig: mergedConfig,
+        proxyRunning: false,
+      });
+
+      alert(`数据恢复成功！已还原 ${accountsToRestore.length} 个账号及代理配置。`);
+    } catch (e: any) {
+      alert('恢复数据遇到异常: ' + e?.message);
     }
   };
 
@@ -158,13 +229,20 @@ export default function SettingsPage() {
             </button>
           </div>
 
-          <div className="flex gap-3 pt-2">
+          <div className="flex flex-wrap gap-3 pt-2">
             <button
               onClick={handleExportData}
               className="flex items-center gap-2 px-4 py-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm transition-colors text-dark-200"
             >
               <Download size={14} />
               导出数据备份
+            </button>
+            <button
+              onClick={handleRestoreData}
+              className="flex items-center gap-2 px-4 py-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg text-sm transition-colors text-dark-200"
+            >
+              <Upload size={14} />
+              从备份恢复数据
             </button>
             <button
               onClick={handleClearData}
@@ -193,7 +271,7 @@ export default function SettingsPage() {
           <div className="space-y-2 text-sm text-dark-400">
             <div className="flex justify-between">
               <span>版本号</span>
-              <span className="text-dark-300 font-mono">v1.0.0 (Production Release)</span>
+              <span className="text-dark-300 font-mono">{appVersion} (Production Release)</span>
             </div>
             <div className="flex justify-between">
               <span>应用架构</span>

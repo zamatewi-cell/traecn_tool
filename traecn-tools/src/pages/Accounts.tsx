@@ -135,6 +135,11 @@ export default function Accounts() {
     return `${secret.slice(0, 6)}***${secret.slice(-4)} (已脱敏保护)`;
   };
 
+  const isMaskedSecret = (val?: string) => {
+    if (!val || typeof val !== 'string') return false;
+    return /[\*]{3,}|已脱敏/i.test(val);
+  };
+
   const sanitizeAccountForExport = (acc: any) => ({
     ...acc,
     token: acc.token ? maskSecret(acc.token) : acc.token,
@@ -150,10 +155,25 @@ export default function Accounts() {
           alert('导入失败: ' + (res.error || '未能解析账号数据'));
           return;
         }
+
+        // 强防线 1: 拦截脱敏导出文件
+        if (res.data._exportType === 'sanitized_accounts_export') {
+          alert('【安全拦截】您选择的文件是「脱敏账号列表」，其中的 Token 已被脱敏保护，无法作为真实凭据导入！\n\n如需完整恢复账号，请使用「设置」页面的全量数据备份文件，或手动添加账号。');
+          return;
+        }
+
         const dataArr = res.data.accounts || (Array.isArray(res.data) ? res.data : [res.data]);
         let addedCount = 0;
+        let maskedSkippedCount = 0;
+
         dataArr.forEach((acc: any) => {
           if (acc && (acc.email || acc.userId || acc.token)) {
+            // 强防线 2: 拦截含掩码/脱敏占位符的假凭据
+            if (isMaskedSecret(acc.token) || isMaskedSecret(acc.refreshToken)) {
+              maskedSkippedCount++;
+              return;
+            }
+
             addAccount({
               id: crypto.randomUUID(),
               email: acc.email || `imported_${Date.now()}`,
@@ -180,7 +200,12 @@ export default function Accounts() {
             addedCount++;
           }
         });
-        alert(`成功导入 ${addedCount} 个账号配置`);
+
+        if (maskedSkippedCount > 0) {
+          alert(`导入完成：成功导入 ${addedCount} 个账号；跳过了 ${maskedSkippedCount} 个包含脱敏保护标记的无效账号。`);
+        } else {
+          alert(`成功导入 ${addedCount} 个账号配置`);
+        }
       } else {
         alert('当前环境不支持本地文件导入');
       }
@@ -191,10 +216,20 @@ export default function Accounts() {
 
   const handleExport = async () => {
     const sanitized = accounts.map(sanitizeAccountForExport);
+    const exportPayload = {
+      _exportType: 'sanitized_accounts_export',
+      version: '1.0.1',
+      exportedAt: new Date().toISOString(),
+      accounts: sanitized,
+    };
     const defaultFileName = `traecn-accounts-sanitized-${new Date().toISOString().slice(0, 10)}.json`;
 
     if (window.electronAPI?.exportAccounts) {
-      const res = await window.electronAPI.exportAccounts({ data: sanitized, defaultFileName });
+      const res = await window.electronAPI.exportAccounts({
+        data: exportPayload,
+        defaultFileName,
+        title: '导出脱敏账号列表 (只读/不可导入)',
+      });
       if (!res.canceled && res.success) {
         alert('脱敏信息导出成功: ' + res.filePath);
       } else if (res.error) {
@@ -203,7 +238,7 @@ export default function Accounts() {
       return;
     }
 
-    const data = JSON.stringify(sanitized, null, 2);
+    const data = JSON.stringify(exportPayload, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');

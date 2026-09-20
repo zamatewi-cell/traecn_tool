@@ -377,3 +377,32 @@ func TestAgentTask_ValidateAgentTaskRequest(t *testing.T) {
 	}
 }
 
+func TestAgentTask_PrematureEOF_And_TurnCompletion(t *testing.T) {
+	p := &TraeProxy{}
+
+	// 1. 模拟提前 EOF（只有 thought，没有 turn_completion）
+	incompleteSSE := "event: thought\ndata: {\"thought\":\"thinking...\"}\n\n"
+	err := p.streamAgentTaskEvents(strings.NewReader(incompleteSSE), "Seed-Code", func(evt *StreamEvent) error {
+		return nil
+	})
+	if err == nil || !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("expected io.ErrUnexpectedEOF on premature stream close, got: %v", err)
+	}
+
+	// 2. 模拟正常完成且携带 length 截断
+	completedSSE := "event: thought\ndata: {\"thought\":\"done\"}\n\nevent: turn_completion\ndata: {\"task_completion\":false,\"finish_reason\":\"length\"}\n\n"
+	var lastFinishReason string
+	err = p.streamAgentTaskEvents(strings.NewReader(completedSSE), "Seed-Code", func(evt *StreamEvent) error {
+		if evt.Type == EventFinish {
+			lastFinishReason = evt.FinishReason
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error for completed SSE: %v", err)
+	}
+	if lastFinishReason != "length" {
+		t.Fatalf("expected finish_reason 'length', got: %q", lastFinishReason)
+	}
+}
+

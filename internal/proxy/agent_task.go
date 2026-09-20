@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -125,7 +126,9 @@ type AgentTaskCreatedEvent struct {
 
 // AgentTurnCompletionEvent matches event: turn_completion.
 type AgentTurnCompletionEvent struct {
-	TaskCompletion bool `json:"task_completion"`
+	TaskCompletion bool   `json:"task_completion"`
+	FinishReason   string `json:"finish_reason"`
+	StopReason     string `json:"stop_reason"`
 }
 
 // randomHex generates an n-byte cryptographically secure random string as hex.
@@ -336,7 +339,15 @@ func buildAgentTaskPayload(req *ChatCompletionRequest, token string, deviceID st
 // doAgentTaskCompletion handles the dispatch to /api/agent/v3/create_agent_task,
 // encrypts via masticate AES-256-GCM, and streams parsed events to handle.
 func (p *TraeProxy) doAgentTaskCompletion(req *ChatCompletionRequest, token string, handle StreamHandler) (int, error) {
-	release := p.limiter.Acquire()
+	ctx := req.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	release, err := p.limiter.AcquireContext(ctx)
+	if err != nil {
+		return 0, err
+	}
 	defer release()
 
 	deviceID := ""
@@ -361,7 +372,7 @@ func (p *TraeProxy) doAgentTaskCompletion(req *ChatCompletionRequest, token stri
 	}
 
 	endpoint := config.AgentDomain + config.EndpointAgentCreateTask
-	httpReq, err := http.NewRequest("POST", endpoint, strings.NewReader(encMsg))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", endpoint, strings.NewReader(encMsg))
 	if err != nil {
 		return 0, fmt.Errorf("failed to create agent_task request: %w", err)
 	}
@@ -397,6 +408,7 @@ func (p *TraeProxy) doAgentTaskCompletion(req *ChatCompletionRequest, token stri
 
 	return http.StatusOK, p.streamAgentTaskEvents(resp.Body, req.ModelName, handle)
 }
+
 
 // streamAgentTaskEvents reads the SSE event stream from create_agent_task,
 // extracts thought, history, token_usage, turn_completion events, and emits
@@ -464,7 +476,18 @@ func (p *TraeProxy) streamAgentTaskEvents(body io.Reader, model string, handle S
 
 		case "turn_completion":
 			finished = true
-			if err := handle(&StreamEvent{Type: EventFinish, FinishReason: "stop"}); err != nil {
+			var tce AgentTurnCompletionEvent
+			reason := "stop"
+			if err := json.Unmarshal([]byte(trimmedData), &tce); err == nil {
+				if tce.FinishReason != "" {
+					reason = tce.FinishReason
+				} else if tce.StopReason != "" {
+					reason = tce.StopReason
+				} else if !tce.TaskCompletion {
+					reason = "incomplete"
+				}
+			}
+			if err := handle(&StreamEvent{Type: EventFinish, FinishReason: reason}); err != nil {
 				return err
 			}
 
@@ -504,9 +527,7 @@ func (p *TraeProxy) streamAgentTaskEvents(body io.Reader, model string, handle S
 	}
 
 	if !finished {
-		if err := handle(&StreamEvent{Type: EventFinish, FinishReason: "stop"}); err != nil {
-			return err
-		}
+		return fmt.Errorf("agent_task stream closed prematurely without turn_completion: %w", io.ErrUnexpectedEOF)
 	}
 
 	return nil

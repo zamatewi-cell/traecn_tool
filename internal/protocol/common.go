@@ -29,7 +29,7 @@ type toolCallAcc struct {
 }
 
 func newCollected() *collected {
-	return &collected{toolCalls: make(map[int]*toolCallAcc), finishReason: "stop"}
+	return &collected{toolCalls: make(map[int]*toolCallAcc), finishReason: ""}
 }
 
 // collect drains a chat completion into a collected response.

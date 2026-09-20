@@ -1,6 +1,6 @@
 {
   "name": "traecn-tools",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "TraeCN Tools - Account & API Proxy Management",
   "main": "electron/main.js",
   "author": "TraeCN Tools",

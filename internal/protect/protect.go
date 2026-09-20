@@ -3,6 +3,7 @@
 package protect
 
 import (
+	"context"
 	"regexp"
 	"strconv"
 	"strings"
@@ -243,16 +244,41 @@ func NewLimiter(maxConcurrent int, minInterval time.Duration) *Limiter {
 // Acquire blocks until the request may proceed; the returned release
 // function must be called when the upstream request completes.
 func (l *Limiter) Acquire() (release func()) {
+	rel, _ := l.AcquireContext(context.Background())
+	return rel
+}
+
+// AcquireContext blocks until the request may proceed or ctx is cancelled;
+// the returned release function must be called when the upstream request completes.
+func (l *Limiter) AcquireContext(ctx context.Context) (release func(), err error) {
 	if l == nil {
-		return func() {}
+		return func() {}, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	if l.sem != nil {
-		l.sem <- struct{}{}
+		select {
+		case l.sem <- struct{}{}:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 	if l.minWait > 0 {
 		l.mu.Lock()
-		if d := time.Since(l.lastAt); d < l.minWait {
-			time.Sleep(l.minWait - d)
+		d := time.Since(l.lastAt)
+		if d < l.minWait {
+			wait := l.minWait - d
+			l.mu.Unlock()
+			select {
+			case <-time.After(wait):
+			case <-ctx.Done():
+				if l.sem != nil {
+					<-l.sem
+				}
+				return nil, ctx.Err()
+			}
+			l.mu.Lock()
 		}
 		l.lastAt = time.Now()
 		l.mu.Unlock()
@@ -261,5 +287,5 @@ func (l *Limiter) Acquire() (release func()) {
 		if l.sem != nil {
 			<-l.sem
 		}
-	}
+	}, nil
 }

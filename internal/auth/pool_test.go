@@ -358,3 +358,110 @@ func TestPool_OnTokenRefreshedCallback(t *testing.T) {
 		t.Errorf("callback received (%v, %v)", callbackAcc, callbackToken)
 	}
 }
+
+func TestPool_DuplicateNameIsolation_P2_6(t *testing.T) {
+	cfg := queue.CircuitBreakerConfig{FailureThreshold: 2, Timeout: 50 * time.Millisecond}
+	p := newTestPool(&PoolOptions{BreakerConfig: cfg})
+
+	// 两个同名账号，不同 ID
+	p.AddAccountWithCredentialsAndID("id-1", "default", "token-1", "", "", time.Time{}, time.Time{}, false)
+	p.AddAccountWithCredentialsAndID("id-2", "default", "token-2", "", "", time.Time{}, time.Time{}, false)
+
+	// 对 id-1 上报失败 2 次使其熔断
+	p.ReportFailure("id-1")
+	p.ReportFailure("id-1")
+
+	accounts := p.GetAccounts()
+	var acc1State, acc2State string
+	for _, a := range accounts {
+		if a.ID == "id-1" {
+			acc1State = a.CircuitState
+		} else if a.ID == "id-2" {
+			acc2State = a.CircuitState
+		}
+	}
+
+	if acc1State != string(queue.StatusOpen) {
+		t.Errorf("id-1 circuit state = %v, want open", acc1State)
+	}
+	if acc2State != string(queue.StatusClosed) {
+		t.Errorf("id-2 circuit state = %v, want closed (should not be affected by id-1)", acc2State)
+	}
+
+	// GetToken 应跳过 id-1，始终返回 id-2 的 token
+	tok, id, err := p.GetToken()
+	if err != nil {
+		t.Fatalf("GetToken error: %v", err)
+	}
+	if tok != "token-2" || id != "id-2" {
+		t.Errorf("GetToken() = (%v, %v), want (token-2, id-2)", tok, id)
+	}
+}
+
+func TestPool_ConsecutiveAuthFailureCircuitBreaker_P2_7(t *testing.T) {
+	cfg := queue.CircuitBreakerConfig{FailureThreshold: 2, Timeout: 50 * time.Millisecond}
+	mr := &mockRefresher{newToken: "refreshed_tok"}
+	p := newTestPool(&PoolOptions{BreakerConfig: cfg, Refresher: mr})
+
+	p.AddAccountWithCredentials("acc", "tok", "refresh_tok", "u1", time.Now().Add(time.Hour), time.Now().Add(24*time.Hour))
+
+	// 模拟真实网关场景：
+	// 第 1 次请求：GetToken -> 上游 401 -> ReportFailure (failure=1)
+	tok1, id1, err := p.GetToken()
+	if err != nil || tok1 != "tok" {
+		t.Fatalf("call 1 GetToken failed: %v", err)
+	}
+	p.ReportFailure(id1)
+
+	// 第 2 次请求：GetToken 触发 refresh 拿到新 token，但不应清零失败计数！
+	// 接着上游依然 401 -> ReportFailure (failure=2，达到阈值)
+	tok2, id2, err := p.GetToken()
+	if err != nil || tok2 != "refreshed_tok" {
+		t.Fatalf("call 2 GetToken failed: %v", err)
+	}
+	p.ReportFailure(id2)
+
+	// 此时失败达到 2 次，账号应当进入 Open 状态
+	accs := p.GetAccounts()
+	if len(accs) != 1 || accs[0].CircuitState != string(queue.StatusOpen) {
+		t.Fatalf("expected circuit open after 2 failures, got: %+v", accs)
+	}
+
+	// 第 3 次请求：此时账号已熔断，GetToken 应当拒绝
+	_, _, err = p.GetToken()
+	if err == nil {
+		t.Fatal("expected GetToken to fail when account is circuit-broken")
+	}
+}
+
+func TestPool_ActiveAccountPreferredAndFallback_P2_10(t *testing.T) {
+	cfg := queue.CircuitBreakerConfig{FailureThreshold: 2, Timeout: 50 * time.Millisecond}
+	p := newTestPool(&PoolOptions{BreakerConfig: cfg})
+
+	p.AddAccountWithCredentialsAndID("acc-a", "Account A", "token-a", "", "", time.Time{}, time.Time{}, false)
+	p.AddAccountWithCredentialsAndID("acc-b", "Account B", "token-b", "", "", time.Time{}, time.Time{}, true) // Active
+
+	// 正常情况下，无论调用多少次，都优先返回 active account (acc-b)
+	for i := 0; i < 5; i++ {
+		tok, id, err := p.GetToken()
+		if err != nil {
+			t.Fatalf("call %d GetToken failed: %v", i, err)
+		}
+		if tok != "token-b" || id != "acc-b" {
+			t.Fatalf("call %d returned (%v, %v), want (token-b, acc-b)", i, tok, id)
+		}
+	}
+
+	// 使 acc-b 熔断
+	p.ReportFailure("acc-b")
+	p.ReportFailure("acc-b")
+
+	// acc-b 熔断后，应自动平滑降级返回 acc-a
+	tok, id, err := p.GetToken()
+	if err != nil {
+		t.Fatalf("fallback GetToken failed: %v", err)
+	}
+	if tok != "token-a" || id != "acc-a" {
+		t.Fatalf("fallback returned (%v, %v), want (token-a, acc-a)", tok, id)
+	}
+}

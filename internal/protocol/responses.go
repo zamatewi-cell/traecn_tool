@@ -167,6 +167,27 @@ func itemContentText(raw json.RawMessage) string {
 func responseObject(id, model string, c *collected, stableIDs map[string]string) map[string]interface{} {
 	var output []interface{}
 
+	status := "completed"
+	var incompleteDetails map[string]interface{}
+	if c.finishReason == "length" || c.finishReason == "max_tokens" {
+		status = "incomplete"
+		incompleteDetails = map[string]interface{}{
+			"reason": "max_output_tokens",
+		}
+	} else if c.finishReason == "content_filter" {
+		status = "incomplete"
+		incompleteDetails = map[string]interface{}{
+			"reason": "content_filter",
+		}
+	} else if c.finishReason == "incomplete" {
+		status = "incomplete"
+		incompleteDetails = map[string]interface{}{
+			"reason": "unknown",
+		}
+	}
+
+	itemStatus := status
+
 	if c.reasoning != "" {
 		rsID := ""
 		if stableIDs != nil {
@@ -178,7 +199,7 @@ func responseObject(id, model string, c *collected, stableIDs map[string]string)
 		output = append(output, map[string]interface{}{
 			"id":     rsID,
 			"type":   "reasoning",
-			"status": "completed",
+			"status": itemStatus,
 			"summary": []interface{}{
 				map[string]interface{}{"type": "summary_text", "text": c.reasoning},
 			},
@@ -196,7 +217,7 @@ func responseObject(id, model string, c *collected, stableIDs map[string]string)
 		output = append(output, map[string]interface{}{
 			"id":      msgID,
 			"type":    "message",
-			"status":  "completed",
+			"status":  itemStatus,
 			"role":    "assistant",
 			"content": []interface{}{
 				map[string]interface{}{"type": "output_text", "text": c.content, "annotations": []interface{}{}},
@@ -217,7 +238,7 @@ func responseObject(id, model string, c *collected, stableIDs map[string]string)
 		output = append(output, map[string]interface{}{
 			"id":        fcID,
 			"type":      "function_call",
-			"status":    "completed",
+			"status":    itemStatus,
 			"call_id":   tc.id,
 			"name":      tc.name,
 			"arguments": tc.args,
@@ -231,15 +252,19 @@ func responseObject(id, model string, c *collected, stableIDs map[string]string)
 		usage["total_tokens"] = c.usage.TotalTokens
 	}
 
-	return map[string]interface{}{
+	res := map[string]interface{}{
 		"id":         id,
 		"object":     "response",
 		"created_at": time.Now().Unix(),
-		"status":     "completed",
+		"status":     status,
 		"model":      model,
 		"output":     output,
 		"usage":      usage,
 	}
+	if incompleteDetails != nil {
+		res["incomplete_details"] = incompleteDetails
+	}
+	return res
 }
 
 // HandleResponses implements POST /v1/responses.
@@ -268,6 +293,7 @@ func (h *ResponsesHandler) HandleResponses(w http.ResponseWriter, r *http.Reques
 		writeProtocolError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
+	upstream.Context = r.Context()
 
 	if req.Stream {
 		h.handleStreaming(w, upstream, &req)
@@ -352,10 +378,32 @@ func (h *ResponsesHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 	closeItem := func() {
 		closePart()
 		if itemOpen && currentItem != nil {
+			itemStatus := "completed"
+			var incompleteDetails map[string]interface{}
+			if c.finishReason == "length" || c.finishReason == "max_tokens" {
+				itemStatus = "incomplete"
+				incompleteDetails = map[string]interface{}{
+					"reason": "max_output_tokens",
+				}
+			} else if c.finishReason == "content_filter" {
+				itemStatus = "incomplete"
+				incompleteDetails = map[string]interface{}{
+					"reason": "content_filter",
+				}
+			} else if c.finishReason == "incomplete" {
+				itemStatus = "incomplete"
+				incompleteDetails = map[string]interface{}{
+					"reason": "unknown",
+				}
+			}
+
 			itemObj := map[string]interface{}{
 				"id":     currentItem.id,
 				"type":   currentItem.typ,
-				"status": "completed",
+				"status": itemStatus,
+			}
+			if incompleteDetails != nil {
+				itemObj["incomplete_details"] = incompleteDetails
 			}
 			switch currentItem.typ {
 			case "reasoning":

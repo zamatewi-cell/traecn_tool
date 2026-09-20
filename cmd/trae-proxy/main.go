@@ -97,6 +97,7 @@ func main() {
 	insecureNoAuth := flag.Bool("insecure-no-auth", false, "allow LAN exposure without API Key authentication (INSECURE)")
 	logLevel := flag.String("log-level", "info", "log level (debug/info/warn/error)")
 	apiKey := flag.String("api-key", "", "API key for authentication (optional, comma-separated for multiple keys)")
+	dbPath := flag.String("db-path", "", "path to sqlite database file (default: data/trae_proxy.db)")
 	showVersion := flag.Bool("version", false, "show version")
 	flag.Parse()
 
@@ -226,6 +227,10 @@ func main() {
 
 	if len(cfg.Accounts) > 0 {
 		for _, acc := range cfg.Accounts {
+			id := acc.ID
+			if id == "" {
+				id = acc.Name
+			}
 			switch {
 			case acc.Token != "":
 				var exp, refExp time.Time
@@ -235,25 +240,28 @@ func main() {
 				if acc.RefreshExpiresAt != "" {
 					refExp, _ = time.Parse(time.RFC3339, acc.RefreshExpiresAt)
 				}
-				tp.AddAccountWithCredentials(acc.Name, acc.Token, acc.RefreshToken, acc.UserID, exp, refExp)
-				logger.Info("added account (credentials)", "name", acc.Name)
+				tp.AddAccountWithCredentialsAndID(id, acc.Name, acc.Token, acc.RefreshToken, acc.UserID, exp, refExp, acc.IsCurrent)
+				logger.Info("added account (credentials)", "id", id, "name", acc.Name)
 			case acc.EnvVar != "":
-				if err := tp.AddAccountFromEnv(acc.Name, acc.EnvVar); err != nil {
-					logger.Warn("failed to add account from env", "name", acc.Name, "env_var", acc.EnvVar, "error", err)
+				if err := tp.AddSourceWithID(id, acc.Name, auth.CredentialSource{Type: auth.SourceEnv, EnvVar: acc.EnvVar}, acc.IsCurrent); err != nil {
+					logger.Warn("failed to add account from env", "id", id, "name", acc.Name, "env_var", acc.EnvVar, "error", err)
 				} else {
-					logger.Info("added account (env var)", "name", acc.Name, "env_var", acc.EnvVar)
+					logger.Info("added account (env var)", "id", id, "name", acc.Name, "env_var", acc.EnvVar)
 				}
 			default:
 				storagePath := acc.StoragePath
 				if storagePath == "" {
 					storagePath = auth.DefaultStoragePath()
 				}
-				if err := tp.AddAccount(acc.Name, storagePath); err != nil {
-					logger.Warn("failed to add account", "name", acc.Name, "error", err)
+				if err := tp.AddSourceWithID(id, acc.Name, auth.CredentialSource{Type: auth.SourceStorage, StoragePath: storagePath}, acc.IsCurrent); err != nil {
+					logger.Warn("failed to add account", "id", id, "name", acc.Name, "error", err)
 				} else {
-					logger.Info("added account (storage)", "name", acc.Name)
+					logger.Info("added account (storage)", "id", id, "name", acc.Name)
 				}
 			}
+		}
+		if cfg.ActiveAccountID != "" {
+			tp.SetActiveAccount(cfg.ActiveAccountID)
 		}
 	} else if hasExplicitEmptyAccounts || autoDiscoverDisabled {
 		logger.Error("FATAL: no valid accounts configured and auto-discovery is explicitly disabled. Refusing to sniff local accounts.")
@@ -278,12 +286,16 @@ func main() {
 	}
 
 	// Initialize SQLite persistence store
-	sqliteStore, err := db.InitGlobalStore(filepath.Join("data", "trae_proxy.db"))
+	finalDbPath := *dbPath
+	if finalDbPath == "" {
+		finalDbPath = filepath.Join("data", "trae_proxy.db")
+	}
+	sqliteStore, err := db.InitGlobalStore(finalDbPath)
 	if err != nil {
-		logger.Warn("failed to initialize sqlite store, activity logging disabled", "error", err)
+		logger.Warn("failed to initialize sqlite store, activity logging disabled", "path", finalDbPath, "error", err)
 	} else {
 		defer sqliteStore.Close()
-		logger.Info("initialized SQLite persistence store", "path", "data/trae_proxy.db")
+		logger.Info("initialized SQLite persistence store", "path", finalDbPath)
 	}
 
 	// Start proxy

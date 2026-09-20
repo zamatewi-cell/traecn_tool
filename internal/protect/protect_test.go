@@ -1,6 +1,7 @@
 package protect
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"testing"
@@ -166,4 +167,28 @@ func TestLimiter_ConcurrentStress(t *testing.T) {
 	if maxSeen > 3 {
 		t.Errorf("concurrency exceeded cap: %d", maxSeen)
 	}
+}
+
+func TestLimiter_AcquireContext_Cancellation(t *testing.T) {
+	l := NewLimiter(1, 0)
+
+	rel1, err := l.AcquireContext(context.Background())
+	if err != nil {
+		t.Fatalf("first acquire failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // 立即取消
+
+	_, err = l.AcquireContext(ctx)
+	if err != context.Canceled {
+		t.Fatalf("expected context.Canceled, got: %v", err)
+	}
+
+	rel1()
+	rel2, err := l.AcquireContext(context.Background())
+	if err != nil {
+		t.Fatalf("acquire after release failed: %v", err)
+	}
+	rel2()
 }

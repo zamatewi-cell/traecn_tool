@@ -17,6 +17,7 @@ type Config struct {
 	APIKeys        []string        `json:"api_keys,omitempty"`
 	RequestTimeout int             `json:"request_timeout,omitempty"`
 	Accounts       []AccountConfig `json:"accounts"`
+	ActiveAccountID string         `json:"active_account_id,omitempty"`
 	AutoDiscover   *bool           `json:"auto_discover,omitempty"`
 	LogLevel       string          `json:"log_level"`
 	Protect        protect.Config  `json:"protect"`
@@ -24,6 +25,7 @@ type Config struct {
 
 // AccountConfig holds a single Trae CN account config
 type AccountConfig struct {
+	ID               string `json:"id,omitempty"`
 	Name             string `json:"name"`
 	StoragePath      string `json:"storage_path,omitempty"`
 	Token            string `json:"token,omitempty"`
@@ -33,6 +35,7 @@ type AccountConfig struct {
 	UserID           string `json:"user_id,omitempty"`
 	EnvVar           string `json:"env_var,omitempty"`
 	Weight           int    `json:"weight,omitempty"`
+	IsCurrent        bool   `json:"is_current,omitempty"`
 }
 
 // DefaultConfig returns default configuration

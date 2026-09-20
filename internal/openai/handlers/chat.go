@@ -56,6 +56,7 @@ func (h *ChatHandler) HandleChatCompletions(w http.ResponseWriter, r *http.Reque
 		h.writeError(w, http.StatusBadRequest, "invalid_request_error", "Failed to transform request: "+err.Error())
 		return
 	}
+	upstreamReq.Context = r.Context()
 
 	if openaiReq.Stream {
 		h.handleStreaming(w, r, upstreamReq, openaiReq.Model)

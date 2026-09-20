@@ -578,3 +578,116 @@ func TestResponses_Streaming_PayloadIntegrity_And_IDConsistency(t *testing.T) {
 	})
 }
 
+func TestResponses_IncompleteStatus_OnLengthFinish(t *testing.T) {
+	c := &collected{
+		content:      "truncated code...",
+		finishReason: "length",
+	}
+	resp := responseObject("resp_123", "test-model", c, nil)
+	if resp["status"] != "incomplete" {
+		t.Errorf("expected status incomplete, got: %v", resp["status"])
+	}
+	incDetails, ok := resp["incomplete_details"].(map[string]interface{})
+	if !ok || incDetails["reason"] != "max_output_tokens" {
+		t.Errorf("expected incomplete_details with reason max_output_tokens, got: %v", resp["incomplete_details"])
+	}
+	outputs, ok := resp["output"].([]interface{})
+	if !ok || len(outputs) == 0 {
+		t.Fatalf("expected output items, got: %v", resp["output"])
+	}
+	firstItem := outputs[0].(map[string]interface{})
+	if firstItem["status"] != "incomplete" {
+		t.Errorf("expected item status incomplete, got: %v", firstItem["status"])
+	}
+}
+
+func TestAnthropic_InterleavedToolCalls_StrictOrdering(t *testing.T) {
+	withUpstream(t, func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatal("expected flusher")
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher.Flush()
+
+		// 模拟交错的并行工具片段：
+		// Tool 0 chunk 1 -> Tool 1 chunk 1 -> Tool 0 chunk 2 -> Tool 1 chunk 2
+		w.Write([]byte("event: chat\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_0\",\"function\":{\"name\":\"func0\",\"arguments\":\"{\\\"a\\\":\"}}]}}]}\n\n"))
+		flusher.Flush()
+		w.Write([]byte("event: chat\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":1,\"id\":\"call_1\",\"function\":{\"name\":\"func1\",\"arguments\":\"{\\\"b\\\":\"}}]}}]}\n\n"))
+		flusher.Flush()
+		w.Write([]byte("event: chat\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"1}\"}}]}}]}\n\n"))
+		flusher.Flush()
+		w.Write([]byte("event: chat\ndata: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":1,\"function\":{\"arguments\":\"2}\"}}]}}]}\n\n"))
+		flusher.Flush()
+		w.Write([]byte("event: chat\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"))
+		flusher.Flush()
+	}, func(p *proxy.TraeProxy, gotBody *map[string]interface{}) {
+		h := NewAnthropicHandler(p)
+
+		req := httptest.NewRequest("POST", "/v1/messages", strings.NewReader(`{
+			"model": "seed_m8",
+			"messages": [{"role": "user", "content": "run parallel tools"}],
+			"stream": true
+		}`))
+		rec := httptest.NewRecorder()
+		h.HandleMessages(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		events := parseSSEEvents(t, rec.Body.String())
+
+		// 验证事件流严格遵守 ContentBlock 单向生命周期：
+		// 每个 block 必须是 start -> deltas -> stop，绝不能在 stop 之后再向该 block 发送 delta！
+		openBlocks := make(map[int]bool)
+		stoppedBlocks := make(map[int]bool)
+		var toolBlockCount int
+		var stopReason string
+
+		for _, e := range events {
+			evtType, _ := e["type"].(string)
+			switch evtType {
+			case "content_block_start":
+				idx := int(e["index"].(float64))
+				if openBlocks[idx] {
+					t.Fatalf("block %d already open", idx)
+				}
+				openBlocks[idx] = true
+				cb, _ := e["content_block"].(map[string]interface{})
+				if cb["type"] == "tool_use" {
+					toolBlockCount++
+				}
+			case "content_block_delta":
+				idx := int(e["index"].(float64))
+				if !openBlocks[idx] {
+					t.Fatalf("content_block_delta emitted for closed or unopened block %d", idx)
+				}
+				if stoppedBlocks[idx] {
+					t.Fatalf("content_block_delta emitted for ALREADY STOPPED block %d (violation of ContentBlock lifecycle)", idx)
+				}
+			case "content_block_stop":
+				idx := int(e["index"].(float64))
+				if !openBlocks[idx] {
+					t.Fatalf("content_block_stop emitted for unopened block %d", idx)
+				}
+				delete(openBlocks, idx)
+				stoppedBlocks[idx] = true
+			case "message_delta":
+				delta, _ := e["delta"].(map[string]interface{})
+				if delta != nil {
+					stopReason, _ = delta["stop_reason"].(string)
+				}
+			}
+		}
+
+		if toolBlockCount != 2 {
+			t.Errorf("expected 2 tool_use blocks, got %d", toolBlockCount)
+		}
+		if stopReason != "tool_use" {
+			t.Errorf("expected stop_reason 'tool_use', got: %q", stopReason)
+		}
+	})
+}
+

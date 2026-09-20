@@ -173,12 +173,15 @@ jobs:
           cache-dependency-path: 'traecn-tools/package-lock.json'
 
       - name: Pre-build Embedded trae-proxy.exe
+        shell: pwsh
         env:
           CGO_ENABLED: 0
           GOOS: windows
           GOARCH: amd64
         run: |
-          go build -trimpath -ldflags="-s -w -X 'github.com/zamatewi-cell/traecn_tool/internal/version.Version=1.0.0'" -o trae-proxy.exe ./cmd/trae-proxy
+          $rawVer = if ($env:GITHUB_REF -match '^refs/tags/v(.+)$') { $Matches[1] } else { "1.0.2-dev.$($env:GITHUB_SHA.Substring(0,7))" }
+          Write-Host "Resolved Desktop Proxy Embedded Version: $rawVer"
+          go build -trimpath -ldflags="-s -w -X 'github.com/zamatewi-cell/traecn_tool/internal/version.Version=$rawVer'" -o trae-proxy.exe ./cmd/trae-proxy
           Get-Item trae-proxy.exe
 
       - name: Install Frontend Dependencies

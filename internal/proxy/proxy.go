@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -150,7 +151,15 @@ func (p *TraeProxy) ChatCompletion(req *ChatCompletionRequest, handle StreamHand
 // doChatCompletion performs a single upstream attempt; the returned status
 // is the upstream HTTP status (0 when no response was received).
 func (p *TraeProxy) doChatCompletion(req *ChatCompletionRequest, token string, handle StreamHandler) (int, error) {
-	release := p.limiter.Acquire()
+	ctx := req.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	release, err := p.limiter.AcquireContext(ctx)
+	if err != nil {
+		return 0, err
+	}
 	defer release()
 
 	ids := NewRequestIDs()
@@ -174,7 +183,7 @@ func (p *TraeProxy) doChatCompletion(req *ChatCompletionRequest, token string, h
 	}
 
 	endpoint := config.AgentDomain + config.EndpointLLMRawChat
-	httpReq, err := http.NewRequest("POST", endpoint, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(body))
 	if err != nil {
 		return 0, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -226,6 +235,7 @@ func (p *TraeProxy) doChatCompletion(req *ChatCompletionRequest, token string, h
 // Inline <think>...</think> blocks inside text deltas are split out into
 // EventReasoning here so every protocol adapter gets clean channels.
 func (p *TraeProxy) streamEvents(body io.Reader, model string, handle StreamHandler) error {
+	defer p.queue.SetQueueStatus(model, 0, "")
 	reader := sse.NewReader(body)
 	handle, flush := WrapStreamHandler(handle)
 

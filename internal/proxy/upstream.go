@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -51,12 +52,13 @@ type Tool struct {
 
 // ChatCompletionRequest is the upstream Trae chat request payload.
 type ChatCompletionRequest struct {
-	ModelName      string    `json:"model_name"`
-	Messages       []Message `json:"messages"`
-	Stream         bool      `json:"stream"`
-	SessionID      string    `json:"session_id,omitempty"`
-	ConversationID string    `json:"conversation_id,omitempty"`
-	TaskID         string    `json:"task_id,omitempty"`
+	Context        context.Context `json:"-"`
+	ModelName      string          `json:"model_name"`
+	Messages       []Message       `json:"messages"`
+	Stream         bool            `json:"stream"`
+	SessionID      string          `json:"session_id,omitempty"`
+	ConversationID string          `json:"conversation_id,omitempty"`
+	TaskID         string          `json:"task_id,omitempty"`
 	Tools          []Tool          `json:"tools,omitempty"`
 	ToolChoice     json.RawMessage `json:"tool_choice,omitempty"`
 }

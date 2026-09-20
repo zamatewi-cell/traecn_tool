@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, shell, safeStorage, dialog } = require('ele
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const net = require('net');
 const crypto = require('crypto');
 const os = require('os');
 const { spawn, execSync } = require('child_process');
@@ -9,6 +10,48 @@ const readline = require('readline');
 
 let mainWindow = null;
 let proxyProcess = null;
+let proxyLifecycleQueue = Promise.resolve();
+
+function runWithProxyLock(fn) {
+  const next = proxyLifecycleQueue.then(fn, fn);
+  proxyLifecycleQueue = next;
+  return next;
+}
+
+function checkTcpReady(host, port, timeoutMs, proc) {
+  const start = Date.now();
+  return new Promise((resolve) => {
+    const check = () => {
+      if (!proc || proc.exitCode !== null || proc.killed) {
+        return resolve(false);
+      }
+      const socket = new net.Socket();
+      socket.setTimeout(300);
+      socket.on('connect', () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.on('error', () => {
+        socket.destroy();
+        if (Date.now() - start > timeoutMs) {
+          resolve(false);
+        } else {
+          setTimeout(check, 100);
+        }
+      });
+      socket.on('timeout', () => {
+        socket.destroy();
+        if (Date.now() - start > timeoutMs) {
+          resolve(false);
+        } else {
+          setTimeout(check, 100);
+        }
+      });
+      socket.connect(port, host);
+    };
+    check();
+  });
+}
 
 const DATA_DIR = path.join(app.getPath('userData'));
 const DATA_FILE = path.join(DATA_DIR, 'traecn-data.json');
@@ -421,21 +464,23 @@ function handleTokenRefreshed(ev) {
   }
 }
 
-function terminateProxyProcess(timeoutMs = 3000) {
+function terminateProxyProcess(targetProc = null, timeoutMs = 3000) {
   return new Promise((resolve) => {
-    if (!proxyProcess || !proxyProcess.pid) {
-      proxyProcess = null;
+    const proc = targetProc || proxyProcess;
+    if (!proc || !proc.pid) {
+      if (proxyProcess === proc) proxyProcess = null;
       return resolve({ success: true, alreadyStopped: true });
     }
 
-    const proc = proxyProcess;
     const pid = proc.pid;
     let resolved = false;
 
     const cleanup = (code) => {
       if (!resolved) {
         resolved = true;
-        proxyProcess = null;
+        if (proxyProcess === proc) {
+          proxyProcess = null;
+        }
         if (mainWindow) {
           mainWindow.webContents.send('proxy-status', { running: false, code });
         }
@@ -473,9 +518,9 @@ function terminateProxyProcess(timeoutMs = 3000) {
 }
 
 // ===== Proxy Service =====
-async function startProxyService(config) {
+async function startProxyServiceInternal(config) {
   if (proxyProcess) {
-    await terminateProxyProcess();
+    await terminateProxyProcess(proxyProcess);
   }
 
   // 强校验前置防线 1: 当开启授权时，必须具有非空白有效密钥
@@ -502,8 +547,9 @@ async function startProxyService(config) {
   // Write proxy config
   const isLan = !!config.allowLan;
   const listenHost = isLan ? '0.0.0.0' : '127.0.0.1';
+  const listenPort = config.listenPort || 8045;
   const proxyConfig = {
-    listen_addr: `${listenHost}:${config.listenPort || 8045}`,
+    listen_addr: `${listenHost}:${listenPort}`,
     allow_lan: isLan,
     log_level: 'info',
     request_timeout: config.requestTimeout || 120,
@@ -519,7 +565,12 @@ async function startProxyService(config) {
   }
 
   activeAccounts.forEach(acc => {
+    const isCurrent = !!acc.isCurrent;
+    if (isCurrent && !proxyConfig.active_account_id) {
+      proxyConfig.active_account_id = acc.id || acc.email || acc.label;
+    }
     proxyConfig.accounts.push({
+      id: acc.id || acc.email || acc.label,
       name: acc.email || acc.label || 'default',
       token: acc.token,
       refresh_token: acc.refreshToken || '',
@@ -527,6 +578,7 @@ async function startProxyService(config) {
       refresh_expires_at: acc.refreshExpiredAt || '',
       user_id: acc.userId || '',
       weight: 1,
+      is_current: isCurrent,
     });
   });
 
@@ -536,6 +588,17 @@ async function startProxyService(config) {
       fs.unlinkSync(PROXY_CONFIG_FILE);
     } catch (e) {
       console.warn('清理旧版 proxy-config.json 异常:', e.message);
+    }
+  }
+
+  // 统一 SQLite 数据持久化目录，彻底消除工作目录漂移
+  const dbDir = path.join(app.getPath('userData'), 'data');
+  const dbPath = path.join(dbDir, 'trae_proxy.db');
+  if (!fs.existsSync(dbDir)) {
+    try {
+      fs.mkdirSync(dbDir, { recursive: true });
+    } catch (e) {
+      console.warn('创建 SQLite 数据目录异常:', e.message);
     }
   }
 
@@ -565,17 +628,31 @@ async function startProxyService(config) {
   }
 
   try {
-    // 零磁盘落盘架构：通过 stdin 管道向 Go 核心传递运行时配置
-    proxyProcess = spawn(binaryPath, ['-config', 'stdin'], {
+    // 零磁盘落盘架构：通过 stdin 管道向 Go 核心传递运行时配置，显式绑定 db-path 与 cwd
+    const proc = spawn(binaryPath, ['-config', 'stdin', '-db-path', dbPath], {
+      cwd: app.getPath('userData'),
       stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    proxyProcess = proc;
+
+    // 错误守卫防线
+    proc.on('error', (err) => {
+      console.error(`[ProxyProcess ${proc.pid}] 启动或运行错误:`, err);
+      if (mainWindow) {
+        mainWindow.webContents.send('proxy-log', `[Process Error] ${err.message}\n`);
+      }
+    });
+
+    proc.stdin.on('error', (err) => {
+      console.warn(`[ProxyProcess ${proc.pid}] stdin 管道错误:`, err.message);
     });
 
     // 立即通过内存管道写入配置并关闭输入端
-    proxyProcess.stdin.write(JSON.stringify(proxyConfig));
-    proxyProcess.stdin.end();
+    proc.stdin.write(JSON.stringify(proxyConfig));
+    proc.stdin.end();
 
     const rl = readline.createInterface({
-      input: proxyProcess.stdout,
+      input: proc.stdout,
       terminal: false,
     });
 
@@ -599,18 +676,30 @@ async function startProxyService(config) {
       }
     });
 
-    proxyProcess.stderr.on('data', (data) => {
+    proc.stderr.on('data', (data) => {
       if (mainWindow) {
         mainWindow.webContents.send('proxy-log', data.toString());
       }
     });
 
-    proxyProcess.on('exit', (code) => {
-      proxyProcess = null;
-      if (mainWindow) {
-        mainWindow.webContents.send('proxy-status', { running: false, code });
+    proc.on('exit', (code) => {
+      // 实例一致性守卫：仅当退出的子进程是当前活跃的 proxyProcess 实例时才清空句柄
+      if (proxyProcess === proc) {
+        proxyProcess = null;
+        if (mainWindow) {
+          mainWindow.webContents.send('proxy-status', { running: false, code });
+        }
       }
     });
+
+    // TCP readiness 探活探测（最长等待 3 秒）
+    const isReady = await checkTcpReady('127.0.0.1', listenPort, 3000, proc);
+    if (!isReady) {
+      if (proxyProcess === proc) {
+        await terminateProxyProcess(proc);
+      }
+      return { success: false, error: `代理服务就绪探活超时，端口 ${listenPort} 未能成功建立监听` };
+    }
 
     return { success: true };
   } catch (e) {
@@ -618,11 +707,17 @@ async function startProxyService(config) {
   }
 }
 
-async function stopProxyService() {
-  if (proxyProcess) {
-    return await terminateProxyProcess();
-  }
-  return { success: false, error: '服务未运行' };
+function startProxyService(config) {
+  return runWithProxyLock(() => startProxyServiceInternal(config));
+}
+
+function stopProxyService() {
+  return runWithProxyLock(async () => {
+    if (proxyProcess) {
+      return await terminateProxyProcess(proxyProcess);
+    }
+    return { success: false, error: '服务未运行' };
+  });
 }
 
 // ===== Window Management =====
@@ -700,11 +795,11 @@ function setupIPC() {
     }
   });
 
-  ipcMain.handle('export-accounts', async (_, { data, defaultFileName }) => {
+  ipcMain.handle('export-accounts', async (_, { data, defaultFileName, title }) => {
     try {
       const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
-        title: '导出脱敏信息',
-        defaultPath: defaultFileName || `traecn-accounts-sanitized-${new Date().toISOString().slice(0, 10)}.json`,
+        title: title || '导出文件',
+        defaultPath: defaultFileName || `traecn-export-${new Date().toISOString().slice(0, 10)}.json`,
         filters: [{ name: 'JSON Files', extensions: ['json'] }],
       });
       if (canceled || !filePath) {

@@ -253,6 +253,7 @@ func (h *AnthropicHandler) HandleMessages(w http.ResponseWriter, r *http.Request
 		writeProtocolError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
+	upstream.Context = r.Context()
 
 	if req.Stream {
 		h.handleStreaming(w, upstream, req.Model)
@@ -302,6 +303,12 @@ func (h *AnthropicHandler) handleNonStreaming(w http.ResponseWriter, upstream *p
 	writeJSON(w, http.StatusOK, resp)
 }
 
+type streamToolCallAccumulator struct {
+	id        string
+	name      string
+	arguments strings.Builder
+}
+
 func (h *AnthropicHandler) handleStreaming(w http.ResponseWriter, upstream *proxy.ChatCompletionRequest, model string) {
 	em, ok := newSSEEmitter(w)
 	if !ok {
@@ -330,7 +337,9 @@ func (h *AnthropicHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 	blockOpen := false
 	blockIndex := -1
 	blockType := ""
-	toolBlockMap := map[int]int{} // upstream tool index -> content block index
+	toolAccMap := make(map[int]*streamToolCallAccumulator)
+	var toolOrder []int
+	var hasEmittedToolCalls bool
 	finishReason := "stop"
 	var usage *proxy.Usage
 
@@ -351,6 +360,37 @@ func (h *AnthropicHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 			"content_block": payload,
 		})
 		blockOpen = true
+	}
+
+	flushToolCalls := func() {
+		closeBlock()
+		for _, idx := range toolOrder {
+			acc := toolAccMap[idx]
+			if acc == nil {
+				continue
+			}
+			openBlock(map[string]interface{}{
+				"type":  "tool_use",
+				"id":    acc.id,
+				"name":  acc.name,
+				"input": map[string]interface{}{},
+			})
+			blockType = "tool_use"
+			args := acc.arguments.String()
+			if args != "" {
+				em.emit("content_block_delta", map[string]interface{}{
+					"type":  "content_block_delta",
+					"index": blockIndex,
+					"delta": map[string]string{"type": "input_json_delta", "partial_json": args},
+				})
+			}
+			closeBlock()
+		}
+		if len(toolOrder) > 0 {
+			hasEmittedToolCalls = true
+		}
+		toolOrder = nil
+		toolAccMap = make(map[int]*streamToolCallAccumulator)
 	}
 
 	err := h.proxy.ChatCompletion(upstream, func(evt *proxy.StreamEvent) error {
@@ -379,24 +419,27 @@ func (h *AnthropicHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 			})
 		case proxy.EventToolCall:
 			tc := evt.ToolCall
-			bi, seen := toolBlockMap[tc.Index]
-			if !seen {
-				closeBlock()
+			acc, ok := toolAccMap[tc.Index]
+			if !ok {
 				id := tc.ID
 				if id == "" {
 					id = "toolu_" + uuid.New().String()
 				}
-				openBlock(map[string]interface{}{"type": "tool_use", "id": id, "name": tc.Name, "input": map[string]interface{}{}})
-				blockType = "tool_use"
-				toolBlockMap[tc.Index] = blockIndex
-				bi = blockIndex
+				acc = &streamToolCallAccumulator{
+					id:   id,
+					name: tc.Name,
+				}
+				toolAccMap[tc.Index] = acc
+				toolOrder = append(toolOrder, tc.Index)
+			}
+			if tc.ID != "" {
+				acc.id = tc.ID
+			}
+			if tc.Name != "" {
+				acc.name = tc.Name
 			}
 			if tc.Arguments != "" {
-				em.emit("content_block_delta", map[string]interface{}{
-					"type":  "content_block_delta",
-					"index": bi,
-					"delta": map[string]string{"type": "input_json_delta", "partial_json": tc.Arguments},
-				})
+				acc.arguments.WriteString(tc.Arguments)
 			}
 		case proxy.EventFinish:
 			finishReason = evt.FinishReason
@@ -419,13 +462,14 @@ func (h *AnthropicHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 		return
 	}
 
+	flushToolCalls()
 	closeBlock()
 
 	u := usageFromProxy(usage)
 	em.emit("message_delta", map[string]interface{}{
 		"type": "message_delta",
 		"delta": map[string]interface{}{
-			"stop_reason":   mapStopReason(finishReason, len(toolBlockMap) > 0),
+			"stop_reason":   mapStopReason(finishReason, hasEmittedToolCalls || len(toolOrder) > 0),
 			"stop_sequence": nil,
 		},
 		"usage": map[string]int{"output_tokens": u.OutputTokens},

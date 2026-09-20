@@ -89,8 +89,10 @@ type RefreshClient interface {
 
 // Account is one credential in the pool with its own circuit breaker.
 type Account struct {
-	Name   string
-	Source CredentialSource
+	ID        string
+	Name      string
+	Source    CredentialSource
+	IsCurrent bool
 
 	mu      sync.Mutex
 	token   *TokenInfo
@@ -142,10 +144,11 @@ func (o *PoolOptions) withDefaults() PoolOptions {
 // Pool manages multiple accounts with round-robin selection, proactive
 // token refresh and per-account circuit breaking / degradation.
 type Pool struct {
-	mu       sync.RWMutex
-	accounts []*Account
-	index    int
-	opts     PoolOptions
+	mu              sync.RWMutex
+	accounts        []*Account
+	index           int
+	activeAccountID string
+	opts            PoolOptions
 }
 
 // NewPool creates an empty account pool.
@@ -153,8 +156,27 @@ func NewPool(opts *PoolOptions) *Pool {
 	return &Pool{opts: opts.withDefaults()}
 }
 
+// SetActiveAccount sets the currently active account ID for preferred dispatch.
+func (p *Pool) SetActiveAccount(id string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.activeAccountID = id
+}
+
+// ActiveAccount returns the current active account ID.
+func (p *Pool) ActiveAccount() string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.activeAccountID
+}
+
 // AddSource registers an account and eagerly loads its credential.
 func (p *Pool) AddSource(name string, src CredentialSource) error {
+	return p.AddSourceWithID(name, name, src, false)
+}
+
+// AddSourceWithID registers an account with an explicit ID and isCurrent flag.
+func (p *Pool) AddSourceWithID(id, name string, src CredentialSource, isCurrent bool) error {
 	tok, err := src.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load credential for %s: %w", name, err)
@@ -162,11 +184,16 @@ func (p *Pool) AddSource(name string, src CredentialSource) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.accounts = append(p.accounts, &Account{
-		Name:    name,
-		Source:  src,
-		token:   tok,
-		breaker: queue.NewCircuitBreaker(p.opts.BreakerConfig),
+		ID:        id,
+		Name:      name,
+		Source:    src,
+		IsCurrent: isCurrent,
+		token:     tok,
+		breaker:   queue.NewCircuitBreaker(p.opts.BreakerConfig),
 	})
+	if isCurrent && p.activeAccountID == "" {
+		p.activeAccountID = id
+	}
 	return nil
 }
 
@@ -185,6 +212,7 @@ func (p *Pool) AddAccountWithToken(name, token string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.accounts = append(p.accounts, &Account{
+		ID:      name,
 		Name:    name,
 		Source:  CredentialSource{Type: SourceToken},
 		token:   DirectTokenInfo(token),
@@ -194,6 +222,11 @@ func (p *Pool) AddAccountWithToken(name, token string) {
 
 // AddAccountWithCredentials registers an account with token, refresh credentials, and expiration metadata.
 func (p *Pool) AddAccountWithCredentials(name, token, refreshToken, userID string, expiresAt, refreshExpiresAt time.Time) {
+	p.AddAccountWithCredentialsAndID(name, name, token, refreshToken, userID, expiresAt, refreshExpiresAt, false)
+}
+
+// AddAccountWithCredentialsAndID registers an account with explicit ID, credentials, and isCurrent flag.
+func (p *Pool) AddAccountWithCredentialsAndID(id, name, token, refreshToken, userID string, expiresAt, refreshExpiresAt time.Time, isCurrent bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -214,11 +247,16 @@ func (p *Pool) AddAccountWithCredentials(name, token, refreshToken, userID strin
 	}
 
 	p.accounts = append(p.accounts, &Account{
-		Name:    name,
-		Source:  CredentialSource{Type: SourceToken},
-		token:   tok,
-		breaker: queue.NewCircuitBreaker(p.opts.BreakerConfig),
+		ID:        id,
+		Name:      name,
+		Source:    CredentialSource{Type: SourceToken},
+		IsCurrent: isCurrent,
+		token:     tok,
+		breaker:   queue.NewCircuitBreaker(p.opts.BreakerConfig),
 	})
+	if isCurrent && p.activeAccountID == "" {
+		p.activeAccountID = id
+	}
 }
 
 // ensureFresh makes sure the account holds a usable token, refreshing
@@ -275,13 +313,48 @@ func (p *Pool) ensureFresh(acc *Account) error {
 }
 
 // GetToken returns a usable token via round-robin, refreshing proactively
-// and skipping circuit-broken / failing accounts.
+// and skipping circuit-broken / failing accounts. If an active account is configured,
+// it is preferred as long as it is healthy and available.
 func (p *Pool) GetToken() (string, string, error) {
 	p.mu.RLock()
 	n := len(p.accounts)
+	activeID := p.activeAccountID
 	p.mu.RUnlock()
 	if n == 0 {
 		return "", "", fmt.Errorf("no accounts available")
+	}
+
+	// 优先调度活动账号 (Active Account Preferred)
+	if activeID != "" {
+		p.mu.RLock()
+		var activeAcc *Account
+		for _, acc := range p.accounts {
+			if acc.ID == activeID || (acc.ID == "" && acc.Name == activeID) {
+				activeAcc = acc
+				break
+			}
+		}
+		p.mu.RUnlock()
+
+		if activeAcc != nil && activeAcc.breaker.Allow() {
+			activeAcc.mu.Lock()
+			err := p.ensureFresh(activeAcc)
+			if err == nil {
+				token := activeAcc.token.AccessToken
+				activeAcc.stale = false
+				activeAcc.mu.Unlock()
+				key := activeAcc.ID
+				if key == "" {
+					key = activeAcc.Name
+				}
+				return token, key, nil
+			}
+			activeAcc.lastErr = err
+			activeAcc.mu.Unlock()
+
+			activeAcc.breaker.RecordFailure()
+			p.opts.Logger.Warn("active account unavailable, falling back to pool", "account", activeAcc.Name, "error", err)
+		}
 	}
 
 	var lastErr error
@@ -301,12 +374,16 @@ func (p *Pool) GetToken() (string, string, error) {
 			token := acc.token.AccessToken
 			acc.stale = false
 			acc.mu.Unlock()
-			acc.breaker.RecordSuccess()
 
 			p.mu.Lock()
 			p.index = (idx + 1) % n
 			p.mu.Unlock()
-			return token, acc.Name, nil
+
+			key := acc.ID
+			if key == "" {
+				key = acc.Name
+			}
+			return token, key, nil
 		}
 		acc.lastErr = err
 		acc.mu.Unlock()
@@ -325,11 +402,21 @@ func (p *Pool) GetToken() (string, string, error) {
 // ReportFailure lets the forwarding layer report an upstream auth failure
 // (e.g. HTTP 401): the account is marked stale so its credential is forcibly
 // refreshed on next use, and the failure feeds the circuit breaker.
-func (p *Pool) ReportFailure(accountName string) {
+// It matches by account ID first, and falls back to account Name.
+func (p *Pool) ReportFailure(accountKey string) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	for _, acc := range p.accounts {
-		if acc.Name == accountName {
+		if acc.ID != "" && acc.ID == accountKey {
+			acc.mu.Lock()
+			acc.stale = true
+			acc.mu.Unlock()
+			acc.breaker.RecordFailure()
+			return
+		}
+	}
+	for _, acc := range p.accounts {
+		if acc.Name == accountKey {
 			acc.mu.Lock()
 			acc.stale = true
 			acc.mu.Unlock()
@@ -340,11 +427,18 @@ func (p *Pool) ReportFailure(accountName string) {
 }
 
 // ReportSuccess records a successful upstream call for the account.
-func (p *Pool) ReportSuccess(accountName string) {
+// It matches by account ID first, and falls back to account Name.
+func (p *Pool) ReportSuccess(accountKey string) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	for _, acc := range p.accounts {
-		if acc.Name == accountName {
+		if acc.ID != "" && acc.ID == accountKey {
+			acc.breaker.RecordSuccess()
+			return
+		}
+	}
+	for _, acc := range p.accounts {
+		if acc.Name == accountKey {
 			acc.breaker.RecordSuccess()
 			return
 		}
@@ -353,12 +447,14 @@ func (p *Pool) ReportSuccess(accountName string) {
 
 // AccountInfo holds account summary info.
 type AccountInfo struct {
+	ID           string    `json:"id,omitempty"`
 	Name         string    `json:"name"`
 	UserID       string    `json:"user_id"`
 	Expired      bool      `json:"expired"`
 	ExpiresAt    time.Time `json:"expires_at"`
 	Source       string    `json:"source"`
 	CircuitState string    `json:"circuit_state"`
+	IsCurrent    bool      `json:"is_current,omitempty"`
 }
 
 // GetAccounts returns summary info for all accounts.
@@ -369,10 +465,13 @@ func (p *Pool) GetAccounts() []AccountInfo {
 	infos := make([]AccountInfo, 0, len(p.accounts))
 	for _, acc := range p.accounts {
 		acc.mu.Lock()
+		isCurrent := acc.IsCurrent || (p.activeAccountID != "" && (acc.ID == p.activeAccountID || acc.Name == p.activeAccountID))
 		info := AccountInfo{
+			ID:           acc.ID,
 			Name:         acc.Name,
 			Source:       string(acc.Source.Type),
 			CircuitState: string(acc.breaker.GetState()),
+			IsCurrent:    isCurrent,
 		}
 		if acc.token != nil {
 			info.UserID = acc.token.UserID
