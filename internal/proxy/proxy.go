@@ -106,6 +106,15 @@ func (p *TraeProxy) ChatCompletion(req *ChatCompletionRequest, handle StreamHand
 
 	channel := models.ResolveChannel(req.ModelName)
 
+	// Fail-Closed 前置守卫：在获取 Token 和重试循环之前执行拦截
+	if channel == models.ChannelAgentTask {
+		if err := ValidateAgentTaskRequest(req); err != nil {
+			p.logger.Warn("rejected unsupported tool/tool_choice request for AgentTask channel",
+				"model", req.ModelName, "error", err)
+			return err
+		}
+	}
+
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		token, accountName, err := p.tokens.GetToken()

@@ -57,7 +57,8 @@ type ChatCompletionRequest struct {
 	SessionID      string    `json:"session_id,omitempty"`
 	ConversationID string    `json:"conversation_id,omitempty"`
 	TaskID         string    `json:"task_id,omitempty"`
-	Tools          []Tool    `json:"tools,omitempty"`
+	Tools          []Tool          `json:"tools,omitempty"`
+	ToolChoice     json.RawMessage `json:"tool_choice,omitempty"`
 }
 
 // RequestIDs bundles the per-request UUIDs injected into headers/body.

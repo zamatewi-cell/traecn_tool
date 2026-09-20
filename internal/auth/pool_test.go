@@ -292,3 +292,69 @@ func TestPool_AddAccountWithToken(t *testing.T) {
 		t.Errorf("GetAccounts() = %+v", infos)
 	}
 }
+
+func TestPool_AddAccountWithCredentials(t *testing.T) {
+	p := newTestPool(nil)
+	p.AddAccountWithCredentials("acc_cred", "tok_val", "ref_val", "u_123", time.Time{}, time.Time{})
+
+	tok, name, err := p.GetToken()
+	if err != nil || tok != "tok_val" || name != "acc_cred" {
+		t.Fatalf("GetToken() = (%v, %v, %v)", tok, name, err)
+	}
+
+	p.mu.RLock()
+	acc := p.accounts[0]
+	p.mu.RUnlock()
+
+	acc.mu.Lock()
+	defer acc.mu.Unlock()
+	if acc.token.RefreshToken != "ref_val" {
+		t.Errorf("RefreshToken = %v, want ref_val", acc.token.RefreshToken)
+	}
+	if acc.token.UserID != "u_123" {
+		t.Errorf("UserID = %v, want u_123", acc.token.UserID)
+	}
+	// 验证时间非零且在当前时间之后（2小时短期兜底而非10年）
+	if acc.token.ExpiresAt.IsZero() || !acc.token.ExpiresAt.After(time.Now()) {
+		t.Errorf("ExpiresAt was not set properly: %v", acc.token.ExpiresAt)
+	}
+	if acc.token.ExpiresAt.After(time.Now().Add(3 * time.Hour)) {
+		t.Errorf("ExpiresAt exceeds 2 hours fallback: %v", acc.token.ExpiresAt)
+	}
+}
+
+func TestPool_OnTokenRefreshedCallback(t *testing.T) {
+	var callbackCalled bool
+	var callbackAcc string
+	var callbackToken string
+
+	mockRef := &mockRefresher{
+		newToken: "renewed_token",
+	}
+
+	opts := &PoolOptions{
+		Refresher: mockRef,
+		OnTokenRefreshed: func(accName string, token *TokenInfo) {
+			callbackCalled = true
+			callbackAcc = accName
+			callbackToken = token.AccessToken
+		},
+	}
+	p := newTestPool(opts)
+	// 添加一个即将过期的 token 触发刷新
+	p.AddAccountWithCredentials("test_acc", "old_token", "old_refresh", "uid_1", time.Now().Add(-time.Minute), time.Now().Add(time.Hour))
+
+	tok, name, err := p.GetToken()
+	if err != nil {
+		t.Fatalf("GetToken error: %v", err)
+	}
+	if tok != "renewed_token" || name != "test_acc" {
+		t.Errorf("GetToken() = (%v, %v), want (renewed_token, test_acc)", tok, name)
+	}
+	if !callbackCalled {
+		t.Error("expected OnTokenRefreshed callback to be invoked")
+	}
+	if callbackAcc != "test_acc" || callbackToken != "renewed_token" {
+		t.Errorf("callback received (%v, %v)", callbackAcc, callbackToken)
+	}
+}

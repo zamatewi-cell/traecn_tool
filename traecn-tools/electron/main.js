@@ -5,6 +5,7 @@ const http = require('http');
 const crypto = require('crypto');
 const os = require('os');
 const { spawn, execSync } = require('child_process');
+const readline = require('readline');
 
 let mainWindow = null;
 let proxyProcess = null;
@@ -399,11 +400,103 @@ function readTraeStorage(storagePath) {
   }
 }
 
+function handleTokenRefreshed(ev) {
+  try {
+    const data = loadData();
+    const acc = data.accounts.find(a => a.email === ev.account || a.label === ev.account || (ev.user_id && a.userId === ev.user_id));
+    if (acc) {
+      acc.token = ev.token;
+      if (ev.refresh_token) acc.refreshToken = ev.refresh_token;
+      if (ev.expires_at) acc.expiredAt = ev.expires_at;
+      if (ev.refresh_expires_at) acc.refreshExpiredAt = ev.refresh_expires_at;
+      acc.lastUsed = new Date().toISOString();
+      saveData(data);
+      console.log(`[TokenSync] 账号 ${acc.label || acc.email} 凭据刷新已安全持久化至 DPAPI 存储`);
+      if (mainWindow) {
+        mainWindow.webContents.send('account-updated', acc);
+      }
+    }
+  } catch (e) {
+    console.error('[TokenSync] 处理 token 刷新事件异常:', e);
+  }
+}
+
+function terminateProxyProcess(timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    if (!proxyProcess || !proxyProcess.pid) {
+      proxyProcess = null;
+      return resolve({ success: true, alreadyStopped: true });
+    }
+
+    const proc = proxyProcess;
+    const pid = proc.pid;
+    let resolved = false;
+
+    const cleanup = (code) => {
+      if (!resolved) {
+        resolved = true;
+        proxyProcess = null;
+        if (mainWindow) {
+          mainWindow.webContents.send('proxy-status', { running: false, code });
+        }
+        resolve({ success: true, pid, code });
+      }
+    };
+
+    proc.once('exit', (code) => cleanup(code));
+
+    try {
+      if (process.platform === 'win32') {
+        // Windows 环境下利用 taskkill /PID ... /T /F 强杀整棵子进程树，彻底杜绝孤儿进程残留
+        execSync(`taskkill /pid ${pid} /T /F`, { stdio: 'ignore' });
+      } else {
+        proc.kill('SIGTERM');
+        setTimeout(() => {
+          try {
+            if (!resolved) proc.kill('SIGKILL');
+          } catch (e) {}
+        }, 600);
+      }
+    } catch (e) {
+      try {
+        proc.kill('SIGKILL');
+      } catch (err) {}
+    }
+
+    // 超时保底强制解除 resolve，杜绝 UI 挂死
+    setTimeout(() => {
+      if (!resolved) {
+        cleanup(-1);
+      }
+    }, timeoutMs);
+  });
+}
+
 // ===== Proxy Service =====
-function startProxyService(config) {
+async function startProxyService(config) {
   if (proxyProcess) {
-    proxyProcess.kill();
-    proxyProcess = null;
+    await terminateProxyProcess();
+  }
+
+  // 强校验前置防线 1: 当开启授权时，必须具有非空白有效密钥
+  if (config.authEnabled) {
+    const rawKey = typeof config.apiKey === 'string' ? config.apiKey.trim() : '';
+    if (!rawKey) {
+      return {
+        success: false,
+        error: '安全防线拦截：您已开启「访问授权」，但未配置有效 API 密钥！严禁生成免密配置，请先填写密钥后再启动代理。',
+      };
+    }
+  }
+
+  // 强校验前置防线 2: 检查是否有启用账号
+  const data = loadData();
+  const activeAccounts = data.accounts.filter(a => !a.disabled && a.token);
+  if (activeAccounts.length === 0) {
+    return {
+      success: false,
+      error: '无法启动服务：当前没有已启用的有效账号，请先添加或启用账号后再启动代理！',
+    };
   }
 
   // Write proxy config
@@ -414,19 +507,25 @@ function startProxyService(config) {
     allow_lan: isLan,
     log_level: 'info',
     request_timeout: config.requestTimeout || 120,
+    auto_discover: false, // 强制注入显式关闭标志，双重拒绝任何未经授权的本机嗅探
     accounts: [],
   };
 
   if (config.authEnabled && config.apiKey) {
-    proxyConfig.api_keys = [config.apiKey];
+    const rawKey = config.apiKey.trim();
+    if (rawKey) {
+      proxyConfig.api_keys = [rawKey];
+    }
   }
 
-  const data = loadData();
-  const activeAccounts = data.accounts.filter(a => !a.disabled && a.token);
   activeAccounts.forEach(acc => {
     proxyConfig.accounts.push({
       name: acc.email || acc.label || 'default',
       token: acc.token,
+      refresh_token: acc.refreshToken || '',
+      expires_at: acc.expiredAt || '',
+      refresh_expires_at: acc.refreshExpiredAt || '',
+      user_id: acc.userId || '',
       weight: 1,
     });
   });
@@ -475,9 +574,28 @@ function startProxyService(config) {
     proxyProcess.stdin.write(JSON.stringify(proxyConfig));
     proxyProcess.stdin.end();
 
-    proxyProcess.stdout.on('data', (data) => {
-      if (mainWindow) {
-        mainWindow.webContents.send('proxy-log', data.toString());
+    const rl = readline.createInterface({
+      input: proxyProcess.stdout,
+      terminal: false,
+    });
+
+    rl.on('line', (line) => {
+      const trimmedLine = line.trim();
+      if (trimmedLine.startsWith('__TRAE_EVENT__:')) {
+        try {
+          const jsonStr = trimmedLine.slice('__TRAE_EVENT__:'.length);
+          const ev = JSON.parse(jsonStr);
+          if (ev.event === 'token_refreshed') {
+            handleTokenRefreshed(ev);
+          }
+        } catch (e) {
+          console.error('[IPC] Failed to parse proxy structured event:', e);
+        }
+        return; // 严禁将 __TRAE_EVENT__: 行广播到前端日志面板，杜绝 Token 泄露
+      }
+
+      if (mainWindow && trimmedLine.length > 0) {
+        mainWindow.webContents.send('proxy-log', line + '\n');
       }
     });
 
@@ -500,10 +618,9 @@ function startProxyService(config) {
   }
 }
 
-function stopProxyService() {
+async function stopProxyService() {
   if (proxyProcess) {
-    killProxyProcess();
-    return { success: true };
+    return await terminateProxyProcess();
   }
   return { success: false, error: '服务未运行' };
 }

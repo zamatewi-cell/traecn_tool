@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -110,6 +111,13 @@ func main() {
 		if f.Name == "log-level" {
 			cliLogLevelSet = true
 		}
+		if f.Name == "api-key" {
+			trimmed := strings.TrimSpace(*apiKey)
+			if trimmed == "" {
+				fmt.Fprintln(os.Stderr, "FATAL: -api-key flag was explicitly provided but contains no valid key! Refusing to start in insecure fallback mode.")
+				os.Exit(1)
+			}
+		}
 	})
 
 	// Setup dynamic logger
@@ -170,6 +178,15 @@ func main() {
 		}
 	}
 
+	// Clean and filter empty api_keys
+	var cleanKeys []string
+	for _, k := range cfg.APIKeys {
+		if tk := strings.TrimSpace(k); tk != "" {
+			cleanKeys = append(cleanKeys, tk)
+		}
+	}
+	cfg.APIKeys = cleanKeys
+
 	// Enforce IP-level loopback security convergence
 	resolvedAddr, isLAN := sanitizeListenAddr(cfg.ListenAddr, cfg.AllowLan, logger)
 	cfg.ListenAddr = resolvedAddr
@@ -181,18 +198,45 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Structured event callback for token refresh
+	onTokenRefreshed := func(accountName string, tok *auth.TokenInfo) {
+		payload := map[string]interface{}{
+			"event":              "token_refreshed",
+			"account":            accountName,
+			"user_id":            tok.UserID,
+			"token":              tok.AccessToken,
+			"refresh_token":      tok.RefreshToken,
+			"expires_at":         tok.ExpiresAt.Format(time.RFC3339),
+			"refresh_expires_at": tok.RefreshExpiresAt.Format(time.RFC3339),
+			"timestamp":          time.Now().Unix(),
+		}
+		raw, _ := json.Marshal(payload)
+		fmt.Printf("__TRAE_EVENT__:%s\n", string(raw))
+	}
+
 	// Initialize credential pool with proactive refresh + circuit breaking
 	tp := auth.NewPool(&auth.PoolOptions{
-		Refresher: auth.NewTokenRefresher(config.AgentDomain, nil),
-		Logger:    logger,
+		Refresher:        auth.NewTokenRefresher(config.AgentDomain, nil),
+		Logger:           logger,
+		OnTokenRefreshed: onTokenRefreshed,
 	})
+
+	hasExplicitEmptyAccounts := (cfg.Accounts != nil && len(cfg.Accounts) == 0)
+	autoDiscoverDisabled := (cfg.AutoDiscover != nil && !*cfg.AutoDiscover)
 
 	if len(cfg.Accounts) > 0 {
 		for _, acc := range cfg.Accounts {
 			switch {
 			case acc.Token != "":
-				tp.AddAccountWithToken(acc.Name, acc.Token)
-				logger.Info("added account (direct token)", "name", acc.Name)
+				var exp, refExp time.Time
+				if acc.ExpiresAt != "" {
+					exp, _ = time.Parse(time.RFC3339, acc.ExpiresAt)
+				}
+				if acc.RefreshExpiresAt != "" {
+					refExp, _ = time.Parse(time.RFC3339, acc.RefreshExpiresAt)
+				}
+				tp.AddAccountWithCredentials(acc.Name, acc.Token, acc.RefreshToken, acc.UserID, exp, refExp)
+				logger.Info("added account (credentials)", "name", acc.Name)
 			case acc.EnvVar != "":
 				if err := tp.AddAccountFromEnv(acc.Name, acc.EnvVar); err != nil {
 					logger.Warn("failed to add account from env", "name", acc.Name, "env_var", acc.EnvVar, "error", err)
@@ -211,7 +255,11 @@ func main() {
 				}
 			}
 		}
+	} else if hasExplicitEmptyAccounts || autoDiscoverDisabled {
+		logger.Error("FATAL: no valid accounts configured and auto-discovery is explicitly disabled. Refusing to sniff local accounts.")
+		os.Exit(1)
 	} else {
+		logger.Info("no accounts explicitly configured, falling back to local Trae credential auto-discovery")
 		sniffed := auth.SniffAccounts()
 		for _, s := range sniffed {
 			if err := tp.AddSource(s.Name, s.Source); err != nil {

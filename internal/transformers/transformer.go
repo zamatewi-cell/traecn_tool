@@ -186,6 +186,9 @@ func (rt *RequestTransformer) Transform(req *OpenAIRequest) (*proxy.ChatCompleti
 		ModelName: rt.mapModel(req.Model),
 		Stream:    req.Stream,
 	}
+	if len(req.ToolChoice) > 0 {
+		out.ToolChoice = req.ToolChoice
+	}
 
 	for _, msg := range req.Messages {
 		up := proxy.Message{

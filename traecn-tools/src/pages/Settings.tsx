@@ -67,43 +67,55 @@ export default function SettingsPage() {
     }
   };
 
-  // ST2: 真实清除所有数据
+  // ST2: 真实清除所有数据 (强同步前置守卫版)
   const handleClearData = async () => {
-    if (confirm('【高危确认】确定要清除所有本地数据与配置吗？此操作将重置全部账号与代理设置，不可撤销！')) {
-      try {
-        const emptyConfig = {
-          listenPort: 8045,
-          requestTimeout: 120,
-          autoStart: false,
-          allowLan: false,
-          authEnabled: true,
-          authMode: 'auto' as const,
-          apiKey: '',
-          webUiPassword: '',
-          userAgentOverride: false,
-          userAgentValue: '',
-        };
+    if (!confirm('【高危确认】确定要清除所有本地数据与配置吗？此操作将立即停止运行中的代理服务，并重置全部账号与代理设置，不可撤销！')) {
+      return;
+    }
 
-        if (window.electronAPI?.saveData) {
-          await window.electronAPI.saveData({
-            accounts: [],
-            proxyConfig: emptyConfig,
-            settings: { language: 'zh', theme: 'dark' },
-          });
+    try {
+      // 步骤 1: 强同步前置守卫 —— 无条件调用 stopProxy() 彻底终止后台子进程
+      if (window.electronAPI?.stopProxy) {
+        const stopRes = await window.electronAPI.stopProxy();
+        if (stopRes && !stopRes.success && stopRes.error !== '服务未运行') {
+          throw new Error(`停止正在运行的代理服务失败: ${stopRes.error}，为防止凭据残留已中止重置！`);
         }
-
-        // 重置内存 store
-        useAppStore.setState({
-          accounts: [],
-          currentAccountId: null,
-          proxyConfig: emptyConfig,
-          proxyLogs: [],
-        });
-
-        alert('所有本地数据已成功清空并重置为初始状态');
-      } catch (e: any) {
-        alert('清除数据失败: ' + e?.message);
       }
+
+      // 步骤 2: 清空本地持久化存储
+      const emptyConfig = {
+        listenPort: 8045,
+        requestTimeout: 120,
+        autoStart: false,
+        allowLan: false,
+        authEnabled: true,
+        authMode: 'auto' as const,
+        apiKey: '',
+        webUiPassword: '',
+        userAgentOverride: false,
+        userAgentValue: '',
+      };
+
+      if (window.electronAPI?.saveData) {
+        await window.electronAPI.saveData({
+          accounts: [],
+          proxyConfig: emptyConfig,
+          settings: { language: 'zh', theme: 'dark' },
+        });
+      }
+
+      // 步骤 3: 完整重置前端 Store 状态机 (显式包含 proxyRunning: false)
+      useAppStore.setState({
+        accounts: [],
+        currentAccountId: null,
+        proxyConfig: emptyConfig,
+        proxyLogs: [],
+        proxyRunning: false,
+      });
+
+      alert('所有本地数据已成功清空，后台代理服务已彻底终止并重置为初始状态');
+    } catch (e: any) {
+      alert('清除数据失败: ' + e?.message);
     }
   };
 

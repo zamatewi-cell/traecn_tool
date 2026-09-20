@@ -490,3 +490,91 @@ func TestResponses_Streaming(t *testing.T) {
 		}
 	})
 }
+
+func TestResponses_Streaming_PayloadIntegrity_And_IDConsistency(t *testing.T) {
+	withUpstream(t, sseUpstream(
+		`{"choices":[{"delta":{"content":"Hi there"}}]}`,
+		`{"choices":[{"finish_reason":"stop"}]}`,
+	), func(p *proxy.TraeProxy, _ *map[string]interface{}) {
+		h := NewResponsesHandler(p)
+		req := httptest.NewRequest("POST", "/v1/responses", strings.NewReader(`{
+		  "model": "seed_m8", "input": "hi", "stream": true
+		}`))
+		rec := httptest.NewRecorder()
+		h.HandleResponses(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+		}
+		events := parseSSEEvents(t, rec.Body.String())
+
+		var streamedItemID string
+		var streamedRespID string
+		var foundPartDone, foundItemDone bool
+
+		for _, e := range events {
+			evtType, _ := e["type"].(string)
+			switch evtType {
+			case "response.created":
+				respMap, ok := e["response"].(map[string]interface{})
+				if ok {
+					streamedRespID, _ = respMap["id"].(string)
+				}
+			case "response.output_item.added":
+				itemMap, ok := e["item"].(map[string]interface{})
+				if ok {
+					streamedItemID, _ = itemMap["id"].(string)
+				}
+			case "response.content_part.done":
+				foundPartDone = true
+				if e["response_id"] == nil || e["response_id"] == "" {
+					t.Errorf("content_part.done missing response_id: %v", e)
+				}
+				if e["item_id"] != streamedItemID {
+					t.Errorf("content_part.done item_id = %v, want %v", e["item_id"], streamedItemID)
+				}
+				part, ok := e["part"].(map[string]interface{})
+				if !ok || part["type"] != "output_text" || part["text"] != "Hi there" {
+					t.Errorf("content_part.done missing valid part object: %v", e)
+				}
+			case "response.output_item.done":
+				foundItemDone = true
+				if e["response_id"] == nil || e["response_id"] == "" {
+					t.Errorf("output_item.done missing response_id: %v", e)
+				}
+				item, ok := e["item"].(map[string]interface{})
+				if !ok || item["id"] != streamedItemID || item["status"] != "completed" {
+					t.Errorf("output_item.done missing valid item object: %v", e)
+				}
+			}
+		}
+
+		if !foundPartDone {
+			t.Error("expected response.content_part.done event")
+		}
+		if !foundItemDone {
+			t.Error("expected response.output_item.done event")
+		}
+
+		// 检查最终完成对象中的 Item ID 是否稳定复用流式 ID
+		lastEvt := events[len(events)-1]
+		completedResp, ok := lastEvt["response"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("last event missing response object: %v", lastEvt)
+		}
+		outputs, ok := completedResp["output"].([]interface{})
+		if !ok || len(outputs) == 0 {
+			t.Fatalf("completed response missing output list: %v", completedResp)
+		}
+		firstOutput := outputs[0].(map[string]interface{})
+		if firstOutput["id"] != streamedItemID {
+			t.Errorf("completed output item ID %v does not match streamed item ID %v (ID drift)",
+				firstOutput["id"], streamedItemID)
+		}
+		if completedResp["id"] != streamedRespID {
+			t.Errorf("completed response ID %v does not match streamed response ID %v",
+				completedResp["id"], streamedRespID)
+		}
+	})
+}
+

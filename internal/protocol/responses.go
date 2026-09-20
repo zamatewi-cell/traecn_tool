@@ -163,13 +163,20 @@ func itemContentText(raw json.RawMessage) string {
 	return sb.String()
 }
 
-// responseObject builds the final Responses API object.
-func responseObject(id, model string, c *collected) map[string]interface{} {
+// responseObject builds the final Responses API object using stable item IDs.
+func responseObject(id, model string, c *collected, stableIDs map[string]string) map[string]interface{} {
 	var output []interface{}
 
 	if c.reasoning != "" {
+		rsID := ""
+		if stableIDs != nil {
+			rsID = stableIDs["reasoning"]
+		}
+		if rsID == "" {
+			rsID = "rs_" + uuid.New().String()
+		}
 		output = append(output, map[string]interface{}{
-			"id":     "rs_" + uuid.New().String(),
+			"id":     rsID,
 			"type":   "reasoning",
 			"status": "completed",
 			"summary": []interface{}{
@@ -179,21 +186,36 @@ func responseObject(id, model string, c *collected) map[string]interface{} {
 	}
 
 	if c.content != "" {
+		msgID := ""
+		if stableIDs != nil {
+			msgID = stableIDs["message"]
+		}
+		if msgID == "" {
+			msgID = "msg_" + uuid.New().String()
+		}
 		output = append(output, map[string]interface{}{
-			"id":     "msg_" + uuid.New().String(),
-			"type":   "message",
-			"status": "completed",
-			"role":   "assistant",
+			"id":      msgID,
+			"type":    "message",
+			"status":  "completed",
+			"role":    "assistant",
 			"content": []interface{}{
 				map[string]interface{}{"type": "output_text", "text": c.content, "annotations": []interface{}{}},
 			},
 		})
 	}
 
-	for _, idx := range c.toolOrder {
+	for i, idx := range c.toolOrder {
 		tc := c.toolCalls[idx]
+		fcKey := fmt.Sprintf("function_call:%d", i)
+		fcID := ""
+		if stableIDs != nil {
+			fcID = stableIDs[fcKey]
+		}
+		if fcID == "" {
+			fcID = "fc_" + uuid.New().String()
+		}
 		output = append(output, map[string]interface{}{
-			"id":        "fc_" + uuid.New().String(),
+			"id":        fcID,
 			"type":      "function_call",
 			"status":    "completed",
 			"call_id":   tc.id,
@@ -260,7 +282,17 @@ func (h *ResponsesHandler) handleNonStreaming(w http.ResponseWriter, upstream *p
 		writeProtocolError(w, http.StatusBadGateway, "api_error", "Upstream error: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, responseObject("resp_"+uuid.New().String(), req.Model, c))
+	writeJSON(w, http.StatusOK, responseObject("resp_"+uuid.New().String(), req.Model, c, nil))
+}
+
+type streamItemMeta struct {
+	id          string
+	typ         string // "reasoning", "message", "function_call"
+	role        string
+	callID      string
+	name        string
+	outputIndex int
+	textBuffer  strings.Builder
 }
 
 func (h *ResponsesHandler) handleStreaming(w http.ResponseWriter, upstream *proxy.ChatCompletionRequest, req *responsesRequest) {
@@ -289,47 +321,94 @@ func (h *ResponsesHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 
 	// Accumulate while streaming for the final response.completed object.
 	c := newCollected()
+	stableIDs := make(map[string]string)
 
-	// Output item / content part state (single message item for text, one
-	// item per tool call, optional leading reasoning item).
 	itemOpen := false
 	itemIndex := -1
 	partOpen := false
-	currentItemID := ""
+	var currentItem *streamItemMeta
 	toolItemMap := map[int]int{}
 
 	closePart := func() {
-		if partOpen {
+		if partOpen && currentItem != nil && currentItem.typ == "message" {
+			partObj := map[string]interface{}{
+				"type":        "output_text",
+				"text":        currentItem.textBuffer.String(),
+				"annotations": []interface{}{},
+			}
 			em.emit("response.content_part.done", map[string]interface{}{
 				"type":            "response.content_part.done",
 				"sequence_number": nextSeq(),
-				"item_id":         currentItemID,
-				"output_index":    itemIndex,
+				"response_id":     respID,
+				"item_id":         currentItem.id,
+				"output_index":    currentItem.outputIndex,
 				"content_index":   0,
+				"part":            partObj,
 			})
 			partOpen = false
 		}
 	}
+
 	closeItem := func() {
 		closePart()
-		if itemOpen {
+		if itemOpen && currentItem != nil {
+			itemObj := map[string]interface{}{
+				"id":     currentItem.id,
+				"type":   currentItem.typ,
+				"status": "completed",
+			}
+			switch currentItem.typ {
+			case "reasoning":
+				itemObj["summary"] = []interface{}{
+					map[string]interface{}{
+						"type": "summary_text",
+						"text": currentItem.textBuffer.String(),
+					},
+				}
+			case "message":
+				itemObj["role"] = currentItem.role
+				itemObj["content"] = []interface{}{
+					map[string]interface{}{
+						"type":        "output_text",
+						"text":        currentItem.textBuffer.String(),
+						"annotations": []interface{}{},
+					},
+				}
+			case "function_call":
+				itemObj["call_id"] = currentItem.callID
+				itemObj["name"] = currentItem.name
+				itemObj["arguments"] = currentItem.textBuffer.String()
+			}
+
 			em.emit("response.output_item.done", map[string]interface{}{
 				"type":            "response.output_item.done",
 				"sequence_number": nextSeq(),
-				"output_index":    itemIndex,
+				"response_id":     respID,
+				"output_index":    currentItem.outputIndex,
+				"item":            itemObj,
 			})
 			itemOpen = false
+			currentItem = nil
 		}
 	}
+
 	openTextItem := func() {
 		itemIndex++
-		currentItemID = "msg_" + uuid.New().String()
+		msgID := "msg_" + uuid.New().String()
+		stableIDs["message"] = msgID
+		currentItem = &streamItemMeta{
+			id:          msgID,
+			typ:         "message",
+			role:        "assistant",
+			outputIndex: itemIndex,
+		}
 		em.emit("response.output_item.added", map[string]interface{}{
 			"type":            "response.output_item.added",
 			"sequence_number": nextSeq(),
+			"response_id":     respID,
 			"output_index":    itemIndex,
 			"item": map[string]interface{}{
-				"id":      currentItemID,
+				"id":      msgID,
 				"type":    "message",
 				"status":  "in_progress",
 				"role":    "assistant",
@@ -339,22 +418,31 @@ func (h *ResponsesHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 		em.emit("response.content_part.added", map[string]interface{}{
 			"type":            "response.content_part.added",
 			"sequence_number": nextSeq(),
-			"item_id":         currentItemID,
+			"response_id":     respID,
+			"item_id":         msgID,
 			"output_index":    itemIndex,
 			"content_index":   0,
 			"part":            map[string]interface{}{"type": "output_text", "text": "", "annotations": []interface{}{}},
 		})
 		itemOpen, partOpen = true, true
 	}
+
 	openReasoningItem := func() {
 		itemIndex++
-		currentItemID = "rs_" + uuid.New().String()
+		rsID := "rs_" + uuid.New().String()
+		stableIDs["reasoning"] = rsID
+		currentItem = &streamItemMeta{
+			id:          rsID,
+			typ:         "reasoning",
+			outputIndex: itemIndex,
+		}
 		em.emit("response.output_item.added", map[string]interface{}{
 			"type":            "response.output_item.added",
 			"sequence_number": nextSeq(),
+			"response_id":     respID,
 			"output_index":    itemIndex,
 			"item": map[string]interface{}{
-				"id":      currentItemID,
+				"id":      rsID,
 				"type":    "reasoning",
 				"status":  "in_progress",
 				"summary": []interface{}{},
@@ -367,28 +455,37 @@ func (h *ResponsesHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 		switch evt.Type {
 		case proxy.EventReasoning:
 			c.reasoning += evt.Reasoning
-			if !itemOpen {
+			if !itemOpen || currentItem == nil || currentItem.typ != "reasoning" {
+				closeItem()
 				openReasoningItem()
+			}
+			if currentItem != nil {
+				currentItem.textBuffer.WriteString(evt.Reasoning)
 			}
 			em.emit("response.reasoning_summary_text.delta", map[string]interface{}{
 				"type":            "response.reasoning_summary_text.delta",
 				"sequence_number": nextSeq(),
-				"item_id":         currentItemID,
-				"output_index":    itemIndex,
+				"response_id":     respID,
+				"item_id":         currentItem.id,
+				"output_index":    currentItem.outputIndex,
 				"summary_index":   0,
 				"delta":           evt.Reasoning,
 			})
 		case proxy.EventText:
 			c.content += evt.Text
-			if !itemOpen || currentItemID == "" || !partOpen {
+			if !itemOpen || currentItem == nil || currentItem.typ != "message" || !partOpen {
 				closeItem()
 				openTextItem()
+			}
+			if currentItem != nil {
+				currentItem.textBuffer.WriteString(evt.Text)
 			}
 			em.emit("response.output_text.delta", map[string]interface{}{
 				"type":            "response.output_text.delta",
 				"sequence_number": nextSeq(),
-				"item_id":         currentItemID,
-				"output_index":    itemIndex,
+				"response_id":     respID,
+				"item_id":         currentItem.id,
+				"output_index":    currentItem.outputIndex,
 				"content_index":   0,
 				"delta":           evt.Text,
 			})
@@ -406,13 +503,23 @@ func (h *ResponsesHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 				if callID == "" {
 					callID = "call_" + uuid.New().String()
 				}
-				currentItemID = "fc_" + uuid.New().String()
+				fcID := "fc_" + uuid.New().String()
+				fcKey := fmt.Sprintf("function_call:%d", len(c.toolOrder)-1)
+				stableIDs[fcKey] = fcID
+				currentItem = &streamItemMeta{
+					id:          fcID,
+					typ:         "function_call",
+					callID:      callID,
+					name:        tc.Name,
+					outputIndex: itemIndex,
+				}
 				em.emit("response.output_item.added", map[string]interface{}{
 					"type":            "response.output_item.added",
 					"sequence_number": nextSeq(),
+					"response_id":     respID,
 					"output_index":    itemIndex,
 					"item": map[string]interface{}{
-						"id":        currentItemID,
+						"id":        fcID,
 						"type":      "function_call",
 						"status":    "in_progress",
 						"call_id":   callID,
@@ -427,13 +534,24 @@ func (h *ResponsesHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 			}
 			if tc.Name != "" {
 				acc.name = tc.Name
+				if currentItem != nil {
+					currentItem.name = tc.Name
+				}
 			}
 			acc.args += tc.Arguments
 			if tc.Arguments != "" {
+				if currentItem != nil {
+					currentItem.textBuffer.WriteString(tc.Arguments)
+				}
+				targetItemID := ""
+				if currentItem != nil {
+					targetItemID = currentItem.id
+				}
 				em.emit("response.function_call_arguments.delta", map[string]interface{}{
 					"type":            "response.function_call_arguments.delta",
 					"sequence_number": nextSeq(),
-					"item_id":         currentItemID,
+					"response_id":     respID,
+					"item_id":         targetItemID,
 					"output_index":    toolItemMap[tc.Index],
 					"delta":           tc.Arguments,
 				})
@@ -464,7 +582,12 @@ func (h *ResponsesHandler) handleStreaming(w http.ResponseWriter, upstream *prox
 
 	closeItem()
 
-	completed := responseObject(respID, req.Model, c)
+	completed := responseObject(respID, req.Model, c, stableIDs)
+	em.emit("response.done", map[string]interface{}{
+		"type":            "response.done",
+		"sequence_number": nextSeq(),
+		"response":        completed,
+	})
 	em.emit("response.completed", map[string]interface{}{
 		"type":            "response.completed",
 		"sequence_number": nextSeq(),

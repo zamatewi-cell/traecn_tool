@@ -109,6 +109,8 @@ type PoolOptions struct {
 	BreakerConfig queue.CircuitBreakerConfig
 	// Logger for refresh/failure diagnostics; nil discards.
 	Logger *slog.Logger
+	// OnTokenRefreshed is triggered immediately after a successful API token refresh.
+	OnTokenRefreshed func(accountName string, token *TokenInfo)
 }
 
 func (o *PoolOptions) withDefaults() PoolOptions {
@@ -129,6 +131,9 @@ func (o *PoolOptions) withDefaults() PoolOptions {
 		}
 		if o.Logger != nil {
 			out.Logger = o.Logger
+		}
+		if o.OnTokenRefreshed != nil {
+			out.OnTokenRefreshed = o.OnTokenRefreshed
 		}
 	}
 	return out
@@ -187,6 +192,35 @@ func (p *Pool) AddAccountWithToken(name, token string) {
 	})
 }
 
+// AddAccountWithCredentials registers an account with token, refresh credentials, and expiration metadata.
+func (p *Pool) AddAccountWithCredentials(name, token, refreshToken, userID string, expiresAt, refreshExpiresAt time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// 真实保底逻辑：若无明确过期时间，默认赋予 2 小时短期兜底，而非 10 年伪造
+	if expiresAt.IsZero() {
+		expiresAt = time.Now().Add(2 * time.Hour)
+	}
+	if refreshExpiresAt.IsZero() && refreshToken != "" {
+		refreshExpiresAt = time.Now().Add(30 * 24 * time.Hour)
+	}
+
+	tok := &TokenInfo{
+		AccessToken:      token,
+		RefreshToken:     refreshToken,
+		ExpiresAt:        expiresAt,
+		RefreshExpiresAt: refreshExpiresAt,
+		UserID:           userID,
+	}
+
+	p.accounts = append(p.accounts, &Account{
+		Name:    name,
+		Source:  CredentialSource{Type: SourceToken},
+		token:   tok,
+		breaker: queue.NewCircuitBreaker(p.opts.BreakerConfig),
+	})
+}
+
 // ensureFresh makes sure the account holds a usable token, refreshing
 // proactively inside the early-refresh window. Refresh chain: API refresh →
 // reload from origin source (the IDE itself may have renewed storage.json) →
@@ -215,6 +249,9 @@ func (p *Pool) ensureFresh(acc *Account) error {
 		if err == nil && nt != nil && nt.AccessToken != "" {
 			nt.AccountID, nt.TenantID, nt.UserID = tok.AccountID, tok.TenantID, tok.UserID
 			acc.token, acc.stale = nt, false
+			if p.opts.OnTokenRefreshed != nil {
+				p.opts.OnTokenRefreshed(acc.Name, nt)
+			}
 			return nil
 		}
 		if err != nil {

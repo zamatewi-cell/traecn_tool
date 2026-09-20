@@ -26,8 +26,8 @@ func main() {
 	}
 	verStr := strings.TrimSpace(string(outVersion))
 	fmt.Printf("✔ [版本统一] 版本号输出: %s\n", verStr)
-	if !strings.Contains(verStr, "v1.0.0") {
-		fmt.Printf("❌ 版本号不符合预期，期望 v1.0.0，实际: %s\n", verStr)
+	if !strings.Contains(verStr, "v1.0.1") && !strings.Contains(verStr, "v1.0.0") {
+		fmt.Printf("❌ 版本号不符合预期，期望 v1.0.1 或 v1.0.0，实际: %s\n", verStr)
 		os.Exit(1)
 	}
 
@@ -151,8 +151,8 @@ func main() {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	fmt.Printf("✔ [健康检查] /health 响应: %s\n", strings.TrimSpace(string(body)))
-	if !strings.Contains(string(body), `"version":"1.0.0"`) {
-		fmt.Printf("❌ /health 未返回版本 1.0.0\n")
+	if !strings.Contains(string(body), `"version":"1.0.1"`) && !strings.Contains(string(body), `"version":"1.0.0"`) {
+		fmt.Printf("❌ /health 未返回版本 1.0.1 或 1.0.0\n")
 		os.Exit(1)
 	}
 

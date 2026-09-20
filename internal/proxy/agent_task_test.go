@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -305,3 +306,74 @@ func TestModels_ResolveChannel(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentTask_ValidateAgentTaskRequest(t *testing.T) {
+	// 1. 无工具、无 ToolChoice、普通消息 -> 允许通过
+	reqOk := &ChatCompletionRequest{
+		ModelName: "Seed-Code",
+		Messages: []Message{
+			{Role: "user", Content: "Hello"},
+			{Role: "assistant", Content: "Hi there"},
+		},
+	}
+	if err := ValidateAgentTaskRequest(reqOk); err != nil {
+		t.Errorf("expected nil error for valid request, got: %v", err)
+	}
+
+	// 2. tool_choice: "none" -> 允许通过
+	reqNone := &ChatCompletionRequest{
+		ModelName:  "Seed-Code",
+		ToolChoice: json.RawMessage(`"none"`),
+	}
+	if err := ValidateAgentTaskRequest(reqNone); err != nil {
+		t.Errorf("expected nil error for tool_choice none, got: %v", err)
+	}
+
+	// 3. 自定义 tools -> 必须拦截
+	reqTools := &ChatCompletionRequest{
+		ModelName: "Seed-Code",
+		Tools: []Tool{
+			{Type: "function", Function: ToolFunctionSpec{Name: "get_weather"}},
+		},
+	}
+	if err := ValidateAgentTaskRequest(reqTools); err == nil || !errors.Is(err, ErrAgentTaskToolsUnsupported) {
+		t.Errorf("expected ErrAgentTaskToolsUnsupported for req with tools, got: %v", err)
+	}
+
+	// 4. tool_choice: "auto" -> 必须拦截
+	reqAuto := &ChatCompletionRequest{
+		ModelName:  "Seed-Code",
+		ToolChoice: json.RawMessage(`"auto"`),
+	}
+	if err := ValidateAgentTaskRequest(reqAuto); err == nil || !errors.Is(err, ErrAgentTaskToolsUnsupported) {
+		t.Errorf("expected ErrAgentTaskToolsUnsupported for tool_choice auto, got: %v", err)
+	}
+
+	// 5. 历史消息中包含 role: tool -> 必须拦截
+	reqToolMsg := &ChatCompletionRequest{
+		ModelName: "Seed-Code",
+		Messages: []Message{
+			{Role: "tool", Content: "tool result", ToolCallID: "call_123"},
+		},
+	}
+	if err := ValidateAgentTaskRequest(reqToolMsg); err == nil || !errors.Is(err, ErrAgentTaskToolsUnsupported) {
+		t.Errorf("expected ErrAgentTaskToolsUnsupported for message with role tool, got: %v", err)
+	}
+
+	// 6. 历史消息中 assistant 包含 tool_calls -> 必须拦截
+	reqToolCalls := &ChatCompletionRequest{
+		ModelName: "Seed-Code",
+		Messages: []Message{
+			{
+				Role: "assistant",
+				ToolCalls: []ToolCall{
+					{ID: "call_123", Type: "function", Function: ToolFunction{Name: "calc"}},
+				},
+			},
+		},
+	}
+	if err := ValidateAgentTaskRequest(reqToolCalls); err == nil || !errors.Is(err, ErrAgentTaskToolsUnsupported) {
+		t.Errorf("expected ErrAgentTaskToolsUnsupported for message with tool_calls, got: %v", err)
+	}
+}
+

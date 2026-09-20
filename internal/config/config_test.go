@@ -252,3 +252,49 @@ func TestAccountConfig_Validation(t *testing.T) {
 		})
 	}
 }
+
+func TestConfig_ParseAutoDiscoverAndRefreshCredentials(t *testing.T) {
+	jsonConfig := `{
+		"listen_addr": "127.0.0.1:8045",
+		"auto_discover": false,
+		"accounts": [
+			{
+				"name": "full_acc",
+				"token": "act_token",
+				"refresh_token": "ref_token",
+				"expires_at": "2026-09-20T12:00:00Z",
+				"refresh_expires_at": "2026-10-20T12:00:00Z",
+				"user_id": "usr_999",
+				"weight": 2
+			}
+		]
+	}`
+
+	cfg, err := ParseConfig([]byte(jsonConfig))
+	if err != nil {
+		t.Fatalf("ParseConfig error: %v", err)
+	}
+
+	if cfg.AutoDiscover == nil || *cfg.AutoDiscover != false {
+		t.Errorf("AutoDiscover = %v, want false", cfg.AutoDiscover)
+	}
+
+	if len(cfg.Accounts) != 1 {
+		t.Fatalf("len(Accounts) = %d, want 1", len(cfg.Accounts))
+	}
+
+	acc := cfg.Accounts[0]
+	if acc.RefreshToken != "ref_token" {
+		t.Errorf("RefreshToken = %v, want ref_token", acc.RefreshToken)
+	}
+	if acc.ExpiresAt != "2026-09-20T12:00:00Z" {
+		t.Errorf("ExpiresAt = %v, want 2026-09-20T12:00:00Z", acc.ExpiresAt)
+	}
+	if acc.RefreshExpiresAt != "2026-10-20T12:00:00Z" {
+		t.Errorf("RefreshExpiresAt = %v, want 2026-10-20T12:00:00Z", acc.RefreshExpiresAt)
+	}
+	if acc.UserID != "usr_999" {
+		t.Errorf("UserID = %v, want usr_999", acc.UserID)
+	}
+}
+

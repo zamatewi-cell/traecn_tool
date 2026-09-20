@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,6 +18,49 @@ import (
 	"github.com/zamatewi-cell/traecn_tool/internal/models"
 	"github.com/zamatewi-cell/traecn_tool/internal/sse"
 )
+
+// ErrAgentTaskToolsUnsupported is returned when tools, tool_choice or tool history are passed to AgentTask channel.
+var ErrAgentTaskToolsUnsupported = errors.New("unsupported_channel_feature: AgentTask channel does not support tools or tool history")
+
+// isToolChoiceNone 判断客户端传入的 tool_choice 是否显式为 "none"
+func isToolChoiceNone(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	return trimmed == `"none"` || trimmed == `none`
+}
+
+// ValidateAgentTaskRequest enforces Fail-Closed policy for models using ChannelAgentTask.
+// It inspects tool declarations, tool_choice and conversation history for any tool-related artifacts.
+func ValidateAgentTaskRequest(req *ChatCompletionRequest) error {
+	if req == nil {
+		return nil
+	}
+
+	// 1. 检查是否显式声明了自定义工具列表
+	if len(req.Tools) > 0 {
+		return fmt.Errorf("%w: requested model %q does not support function/tool declarations via AgentTask channel; please use preset models (e.g., deepseek-V3, seed_m8) for tool calling",
+			ErrAgentTaskToolsUnsupported, req.ModelName)
+	}
+
+	// 2. 检查是否显式指定了非 "none" 的 ToolChoice (AI-3 边界加固)
+	if len(req.ToolChoice) > 0 && !isToolChoiceNone(req.ToolChoice) {
+		return fmt.Errorf("%w: requested model %q does not support tool_choice declarations via AgentTask channel; please use preset models for tool calling",
+			ErrAgentTaskToolsUnsupported, req.ModelName)
+	}
+
+	// 3. 检查会话历史中是否包含工具交互残留 (tool_calls, role: tool 或 role: function)
+	for i, msg := range req.Messages {
+		if strings.EqualFold(msg.Role, "tool") || strings.EqualFold(msg.Role, "function") {
+			return fmt.Errorf("%w: message at index %d contains role %q which is unsupported in AgentTask channel",
+				ErrAgentTaskToolsUnsupported, i, msg.Role)
+		}
+		if len(msg.ToolCalls) > 0 {
+			return fmt.Errorf("%w: assistant message at index %d contains tool_calls history which is unsupported in AgentTask channel",
+				ErrAgentTaskToolsUnsupported, i)
+		}
+	}
+
+	return nil
+}
 
 // AgentRenderContext wraps the environment variables for upstream prompt template rendering.
 type AgentRenderContext struct {

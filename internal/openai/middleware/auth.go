@@ -14,7 +14,10 @@ type APIKeyAuthMiddleware struct {
 func NewAPIKeyAuthMiddleware(apiKeys []string) *APIKeyAuthMiddleware {
 	keys := make(map[string]bool)
 	for _, key := range apiKeys {
-		keys[key] = true
+		trimmed := strings.TrimSpace(key)
+		if trimmed != "" {
+			keys[trimmed] = true
+		}
 	}
 	return &APIKeyAuthMiddleware{
 		validKeys: keys,
@@ -53,9 +56,10 @@ func (m *APIKeyAuthMiddleware) Middleware(next http.Handler) http.Handler {
 		} else {
 			apiKey = authHeader
 		}
+		apiKey = strings.TrimSpace(apiKey)
 
-		// Check if API key is valid
-		if !m.validKeys[apiKey] {
+		// Check if API key is valid (reject empty or unrecognized keys)
+		if apiKey == "" || !m.validKeys[apiKey] {
 			http.Error(w, `{"error": {"message": "Invalid API key", "type": "authentication_error"}}`, http.StatusUnauthorized)
 			return
 		}

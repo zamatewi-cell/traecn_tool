@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -138,7 +139,11 @@ func (h *ChatHandler) handleNonStreaming(w http.ResponseWriter, r *http.Request,
 	statusCode := http.StatusOK
 	var errMsg string
 	if err != nil {
-		statusCode = http.StatusBadGateway
+		if errors.Is(err, proxy.ErrAgentTaskToolsUnsupported) {
+			statusCode = http.StatusBadRequest
+		} else {
+			statusCode = http.StatusBadGateway
+		}
 		errMsg = err.Error()
 	}
 
@@ -158,6 +163,10 @@ func (h *ChatHandler) handleNonStreaming(w http.ResponseWriter, r *http.Request,
 	})
 
 	if err != nil {
+		if errors.Is(err, proxy.ErrAgentTaskToolsUnsupported) {
+			h.writeError(w, http.StatusBadRequest, "unsupported_channel_feature", err.Error())
+			return
+		}
 		h.writeError(w, http.StatusBadGateway, "upstream_error", "Proxy error: "+err.Error())
 		return
 	}
@@ -235,7 +244,11 @@ func (h *ChatHandler) handleStreaming(w http.ResponseWriter, r *http.Request, up
 		statusCode := http.StatusOK
 		var errMsg string
 		if err != nil {
-			statusCode = http.StatusBadGateway
+			if errors.Is(err, proxy.ErrAgentTaskToolsUnsupported) {
+				statusCode = http.StatusBadRequest
+			} else {
+				statusCode = http.StatusBadGateway
+			}
 			errMsg = err.Error()
 		}
 
@@ -340,10 +353,14 @@ func (h *ChatHandler) handleStreaming(w http.ResponseWriter, r *http.Request, up
 	recordCompletion(err)
 
 	if err != nil {
+		errType := "upstream_error"
+		if errors.Is(err, proxy.ErrAgentTaskToolsUnsupported) {
+			errType = "unsupported_channel_feature"
+		}
 		errorResp := transformers.ErrorResponse{
 			Error: transformers.ErrorDetail{
 				Message: "Stream error: " + err.Error(),
-				Type:    "upstream_error",
+				Type:    transformers.ErrorCode(errType),
 			},
 		}
 		h.sendSSE(w, flusher, errorResp)
