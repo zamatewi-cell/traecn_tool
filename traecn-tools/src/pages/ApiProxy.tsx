@@ -64,6 +64,14 @@ export default function ApiProxy() {
     setExpandedSections((s) => ({ ...s, [key]: !s[key] }));
   };
 
+  const handleConfigUpdate = async (updates: Partial<typeof proxyConfig>) => {
+    try {
+      await updateProxyConfig(updates);
+    } catch (err: any) {
+      alert(`保存配置失败: ${err?.message || '写入磁盘失败'}，配置已自动回滚。`);
+    }
+  };
+
   const baseUrl = `http://127.0.0.1:${proxyConfig.listenPort}`;
 
   return (
@@ -101,7 +109,7 @@ export default function ApiProxy() {
             <input
               type="number"
               value={proxyConfig.listenPort}
-              onChange={(e) => updateProxyConfig({ listenPort: parseInt(e.target.value) || 8045 })}
+              onChange={(e) => handleConfigUpdate({ listenPort: parseInt(e.target.value) || 8045 })}
               className="w-full px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-sm text-dark-200 focus:outline-none focus:border-blue-500"
             />
             <p className="text-xs text-dark-500 mt-1">默认 8045，修改端口需重启服务</p>
@@ -115,7 +123,7 @@ export default function ApiProxy() {
             <input
               type="number"
               value={proxyConfig.requestTimeout}
-              onChange={(e) => updateProxyConfig({ requestTimeout: Math.max(30, Math.min(7200, parseInt(e.target.value) || 120)) })}
+              onChange={(e) => handleConfigUpdate({ requestTimeout: Math.max(30, Math.min(7200, parseInt(e.target.value) || 120)) })}
               className="w-full px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-sm text-dark-200 focus:outline-none focus:border-blue-500"
             />
             <p className="text-xs text-dark-500 mt-1">默认 120 秒，范围 30-7200秒。修改后需重启服务生效。</p>
@@ -130,7 +138,7 @@ export default function ApiProxy() {
             </label>
             <ToggleSwitch
               active={proxyConfig.allowLan}
-              onChange={(v) => updateProxyConfig({ allowLan: v })}
+              onChange={(v) => handleConfigUpdate({ allowLan: v })}
             />
             <p className="text-xs text-dark-500 mt-1">
               默认仅监听 127.0.0.1，仅本机可访问（隐私优先）
@@ -147,7 +155,7 @@ export default function ApiProxy() {
                 <span className="text-xs text-dark-400">{proxyConfig.authEnabled ? '已启用' : '已关闭'}</span>
                 <ToggleSwitch
                   active={proxyConfig.authEnabled}
-                  onChange={(v) => updateProxyConfig({ authEnabled: v })}
+                  onChange={(v) => handleConfigUpdate({ authEnabled: v })}
                 />
               </div>
             </div>
@@ -179,7 +187,7 @@ export default function ApiProxy() {
               {showApiKey ? <EyeOff size={16} className="text-dark-400" /> : <Eye size={16} className="text-dark-400" />}
             </button>
             <button
-              onClick={() => updateProxyConfig({ apiKey: 'sk-' + crypto.getRandomValues(new Uint8Array(24)).reduce((s, b) => s + b.toString(16).padStart(2, '0'), '') })}
+              onClick={() => handleConfigUpdate({ apiKey: 'sk-' + crypto.getRandomValues(new Uint8Array(24)).reduce((s, b) => s + b.toString(16).padStart(2, '0'), '') })}
               className="p-2 bg-dark-700 hover:bg-dark-600 border border-dark-600 rounded-lg transition-colors"
               title="重新生成随机 API Key"
             >
@@ -195,7 +203,6 @@ export default function ApiProxy() {
           </div>
           <p className="text-xs text-orange-400 mt-1">注意：请妥善保管您的 API 密钥，不要泄露给他人。</p>
         </div>
-
 
       </div>
 

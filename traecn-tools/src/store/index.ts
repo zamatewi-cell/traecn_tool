@@ -218,6 +218,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   updateProxyConfig: async (updates) => {
     const prevConfig = get().proxyConfig;
+    const prevUrl = get().backendUrl;
     const updated = { ...prevConfig, ...updates };
     const url = `http://127.0.0.1:${updated.listenPort}`;
     apiClient.setBaseUrl(url);
@@ -229,7 +230,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       await get().save();
     } catch (e) {
-      set({ proxyConfig: prevConfig });
+      const rollbackUrl = prevUrl || `http://127.0.0.1:${prevConfig.listenPort}`;
+      const rollbackApiKey = prevConfig.authEnabled && prevConfig.apiKey ? prevConfig.apiKey : '';
+      apiClient.setBaseUrl(rollbackUrl);
+      apiClient.setApiKey(rollbackApiKey);
+      set({
+        proxyConfig: prevConfig,
+        backendUrl: rollbackUrl,
+      });
       throw e;
     }
   },

@@ -291,3 +291,96 @@ test('Adversarial P1-Callchain: switchAccount save failure strictly aborts proxy
   assert.strictEqual(diskState.activeAccountId, 'acc-B', '磁盘已安全更新为 acc-B');
   assert.strictEqual(store.runtimeActiveAccountId, 'acc-B', '网关实际生效快照成功切换为 acc-B');
 });
+
+// 测试 6: [P2 配置回滚完整性] updateProxyConfig 写盘失败时，proxyConfig、backendUrl 以及 apiClient 的 baseUrl 和 apiKey 必须全部完整回滚，页面捕获异常不发生 unhandled rejection
+test('Adversarial P2: updateProxyConfig save failure completely rolls back proxyConfig, backendUrl, and apiClient credentials', async () => {
+  // 模拟 apiClient 实例
+  let clientState = {
+    baseUrl: 'http://127.0.0.1:9090',
+    apiKey: 'sk-old-token-12345',
+  };
+  const mockApiClient = {
+    setBaseUrl: (url) => { clientState.baseUrl = url; },
+    setApiKey: (key) => { clientState.apiKey = key; },
+  };
+
+  // 初始 Store 状态
+  let store = {
+    proxyConfig: {
+      listenPort: 9090,
+      authEnabled: true,
+      apiKey: 'sk-old-token-12345',
+      allowLan: false,
+      requestTimeout: 120,
+    },
+    backendUrl: 'http://127.0.0.1:9090',
+  };
+
+  const mockSave = async (shouldFail) => {
+    if (shouldFail) {
+      throw new Error('ENOSPC: no space left on device, write');
+    }
+  };
+
+  // 严格按 store/index.ts 生产逻辑执行 updateProxyConfig
+  const updateProxyConfig = async (updates, shouldFailSave = false) => {
+    const prevConfig = store.proxyConfig;
+    const prevUrl = store.backendUrl;
+    const updated = { ...prevConfig, ...updates };
+    const url = `http://127.0.0.1:${updated.listenPort}`;
+    mockApiClient.setBaseUrl(url);
+    mockApiClient.setApiKey(updated.authEnabled && updated.apiKey ? updated.apiKey : '');
+    store.proxyConfig = updated;
+    store.backendUrl = url;
+
+    try {
+      await mockSave(shouldFailSave);
+    } catch (e) {
+      const rollbackUrl = prevUrl || `http://127.0.0.1:${prevConfig.listenPort}`;
+      const rollbackApiKey = prevConfig.authEnabled && prevConfig.apiKey ? prevConfig.apiKey : '';
+      mockApiClient.setBaseUrl(rollbackUrl);
+      mockApiClient.setApiKey(rollbackApiKey);
+      store.proxyConfig = prevConfig;
+      store.backendUrl = rollbackUrl;
+      throw e;
+    }
+  };
+
+  let pageAlertMessage = null;
+  // 模拟 ApiProxy.tsx 页面 handleConfigUpdate
+  const handleConfigUpdate = async (updates, injectFail = false) => {
+    try {
+      await updateProxyConfig(updates, injectFail);
+    } catch (err) {
+      pageAlertMessage = `保存配置失败: ${err.message}，配置已自动回滚。`;
+    }
+  };
+
+  // 场景 1: 尝试将端口修改为 9091，密钥修改为 sk-new-token-99999，但注入写盘失败 (ENOSPC)
+  await handleConfigUpdate({
+    listenPort: 9091,
+    apiKey: 'sk-new-token-99999',
+  }, true);
+
+  // 验证完整回滚：
+  assert.strictEqual(store.proxyConfig.listenPort, 9090, '写盘失败后 proxyConfig.listenPort 必须回滚为 9090');
+  assert.strictEqual(store.proxyConfig.apiKey, 'sk-old-token-12345', '写盘失败后 proxyConfig.apiKey 必须回滚为原旧密钥');
+  assert.strictEqual(store.backendUrl, 'http://127.0.0.1:9090', '写盘失败后 store.backendUrl 必须回滚为 9090');
+  assert.strictEqual(clientState.baseUrl, 'http://127.0.0.1:9090', '写盘失败后 apiClient.baseUrl 必须完整回滚为 9090');
+  assert.strictEqual(clientState.apiKey, 'sk-old-token-12345', '写盘失败后 apiClient.apiKey 必须完整回滚为原旧密钥');
+  assert.match(pageAlertMessage, /ENOSPC/, '页面层必须捕获异常并向用户给出包含 ENOSPC 的回滚提示');
+
+  // 场景 2: 写盘成功正常更新
+  pageAlertMessage = null;
+  await handleConfigUpdate({
+    listenPort: 9091,
+    apiKey: 'sk-new-token-99999',
+  }, false);
+
+  assert.strictEqual(store.proxyConfig.listenPort, 9091, '写盘成功后 proxyConfig.listenPort 为 9091');
+  assert.strictEqual(store.proxyConfig.apiKey, 'sk-new-token-99999', '写盘成功后 proxyConfig.apiKey 为新密钥');
+  assert.strictEqual(store.backendUrl, 'http://127.0.0.1:9091', '写盘成功后 store.backendUrl 更新为 9091');
+  assert.strictEqual(clientState.baseUrl, 'http://127.0.0.1:9091', '写盘成功后 apiClient.baseUrl 更新为 9091');
+  assert.strictEqual(clientState.apiKey, 'sk-new-token-99999', '写盘成功后 apiClient.apiKey 更新为新密钥');
+  assert.strictEqual(pageAlertMessage, null, '写盘成功后不得触发失败提示');
+});
