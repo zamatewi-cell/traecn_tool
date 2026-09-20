@@ -301,10 +301,15 @@ export default function Accounts() {
     if (proxyRunning) {
       const confirmed = window.confirm(
         '当前代理服务正在运行中，切换账号需重启代理服务方能使网关生效。\n\n' +
-        '点击【确定】将立即自动平滑重启代理；\n' +
+        '点击【确定】将立即保存并自动平滑重启代理；\n' +
         '点击【取消】将仅记录首选项，并在下次启动代理时生效。'
       );
-      switchAccount(id);
+      try {
+        await switchAccount(id);
+      } catch (err: any) {
+        alert('切换账号保存失败: ' + (err?.message || err) + '，已取消切换与重启！');
+        return;
+      }
       if (confirmed) {
         try {
           const stopRes = await stopProxy();
@@ -325,7 +330,11 @@ export default function Accounts() {
         alert('已记录该账号为首选账号。当前代理服务仍在运行旧账号，将在下次重启代理后生效。');
       }
     } else {
-      switchAccount(id);
+      try {
+        await switchAccount(id);
+      } catch (err: any) {
+        alert('切换账号保存失败: ' + (err?.message || err));
+      }
     }
   };
 

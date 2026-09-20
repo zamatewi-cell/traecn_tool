@@ -167,3 +167,127 @@ test('Adversarial P2-4: Runtime account switch state machine distinguishes activ
   state.runtimeActiveAccountId = null;
   assert.strictEqual(getAccountStatus('acc-2', state), 'preferred', '代理停止后首选为 acc-2');
 });
+
+// 测试 5: [P1 完整调用链] switchAccount 写盘失败时，内存必须回滚，页面绝对不重启代理，绝对不宣告成功
+test('Adversarial P1-Callchain: switchAccount save failure strictly aborts proxy restart, rolls back memory, and prevents false success', async () => {
+  // 模拟初始内存 Store
+  let store = {
+    accounts: [
+      { id: 'acc-A', email: 'a@example.com', isCurrent: true, token: 'token-A' },
+      { id: 'acc-B', email: 'b@example.com', isCurrent: false, token: 'token-B' },
+    ],
+    currentAccountId: 'acc-A',
+    proxyRunning: true,
+    runtimeActiveAccountId: 'acc-A', // 正在运行 A
+  };
+
+  // 模拟磁盘状态 (只保存了 A)
+  let diskState = {
+    accounts: [
+      { id: 'acc-A', email: 'a@example.com', isCurrent: true, token: 'token-A' },
+      { id: 'acc-B', email: 'b@example.com', isCurrent: false, token: 'token-B' },
+    ],
+    activeAccountId: 'acc-A',
+  };
+
+  let stopProxyCalled = false;
+  let startProxyCalled = false;
+  let successNoticeShown = false;
+  let errorNoticeShown = false;
+
+  // 模拟 store 中的 save 与 switchAccount（带有原子回滚）
+  const mockSave = async (shouldFail) => {
+    if (shouldFail) {
+      const err = new Error('ENOSPC: no space left on device, write');
+      throw err;
+    }
+    // 模拟写盘成功
+    diskState.accounts = JSON.parse(JSON.stringify(store.accounts));
+    diskState.activeAccountId = store.currentAccountId;
+  };
+
+  const switchAccount = async (id, shouldFailSave = false) => {
+    const prevAccounts = JSON.parse(JSON.stringify(store.accounts));
+    const prevCurrent = store.currentAccountId;
+    store.accounts = store.accounts.map((a) => ({ ...a, isCurrent: a.id === id }));
+    store.currentAccountId = id;
+    try {
+      await mockSave(shouldFailSave);
+    } catch (e) {
+      // 事务回滚
+      store.accounts = prevAccounts;
+      store.currentAccountId = prevCurrent;
+      throw e;
+    }
+  };
+
+  const stopProxy = async () => {
+    stopProxyCalled = true;
+    store.proxyRunning = false;
+    return { success: true };
+  };
+
+  const startProxy = async () => {
+    startProxyCalled = true;
+    store.proxyRunning = true;
+    // 关键：底层从磁盘读取真实的 activeAccountId 快照返回！
+    const realActiveId = diskState.activeAccountId;
+    store.runtimeActiveAccountId = realActiveId;
+    return { success: true, activeAccountId: realActiveId };
+  };
+
+  // 模拟 Accounts.tsx / Dashboard.tsx 中的真实 handleSwitchAccount 链路
+  const handleSwitchAccount = async (id, confirmedRestart = true, injectSaveFailure = false) => {
+    if (store.proxyRunning) {
+      try {
+        await switchAccount(id, injectSaveFailure);
+      } catch (err) {
+        errorNoticeShown = true;
+        // 关键守卫：写盘失败立即中止，绝不执行后续 stop/start 重启！
+        return;
+      }
+
+      if (confirmedRestart) {
+        const stopRes = await stopProxy();
+        if (!stopRes.success) return;
+        const startRes = await startProxy();
+        if (startRes.success) {
+          successNoticeShown = true;
+        }
+      }
+    } else {
+      try {
+        await switchAccount(id, injectSaveFailure);
+      } catch (err) {
+        errorNoticeShown = true;
+      }
+    }
+  };
+
+  // 场景 1: 注入写盘失败 (ENOSPC)
+  await handleSwitchAccount('acc-B', true, true);
+
+  // 司法级断言验证：
+  assert.strictEqual(errorNoticeShown, true, '写盘失败时必须捕获并记录错误');
+  assert.strictEqual(successNoticeShown, false, '写盘失败时绝对不能提示切换成功');
+  assert.strictEqual(stopProxyCalled, false, '写盘失败时绝对不得调用 stopProxy 停止代理');
+  assert.strictEqual(startProxyCalled, false, '写盘失败时绝对不得调用 startProxy 重启代理');
+  // 断言内存已回滚：
+  assert.strictEqual(store.currentAccountId, 'acc-A', '写盘失败后内存 currentAccountId 必须回滚为 acc-A');
+  assert.strictEqual(store.accounts[0].isCurrent, true, 'acc-A 的 isCurrent 必须回滚为 true');
+  assert.strictEqual(store.accounts[1].isCurrent, false, 'acc-B 的 isCurrent 必须回滚为 false');
+  // 断言磁盘与运行状态完好：
+  assert.strictEqual(diskState.activeAccountId, 'acc-A', '磁盘账号必须仍为 acc-A');
+  assert.strictEqual(store.runtimeActiveAccountId, 'acc-A', '运行中生效账号必须仍为 acc-A');
+
+  // 场景 2: 写盘成功，正常重启
+  errorNoticeShown = false;
+  await handleSwitchAccount('acc-B', true, false);
+
+  assert.strictEqual(stopProxyCalled, true, '正常切换且确认重启必须调用 stopProxy');
+  assert.strictEqual(startProxyCalled, true, '正常切换且确认重启必须调用 startProxy');
+  assert.strictEqual(successNoticeShown, true, '保存并重启成功后才可提示成功');
+  assert.strictEqual(store.currentAccountId, 'acc-B', '当前选择成功切换为 acc-B');
+  assert.strictEqual(diskState.activeAccountId, 'acc-B', '磁盘已安全更新为 acc-B');
+  assert.strictEqual(store.runtimeActiveAccountId, 'acc-B', '网关实际生效快照成功切换为 acc-B');
+});

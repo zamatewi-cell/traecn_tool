@@ -83,7 +83,7 @@ export interface ElectronAPI {
   importAccounts: () => Promise<{ success: boolean; data?: Account[]; error?: string; canceled?: boolean; filePath?: string }>;
   exportAccounts: (options: { data: any; defaultFileName?: string } | any, defaultFileName?: string) => Promise<{ success: boolean; error?: string; canceled?: boolean; filePath?: string }>;
   generateFingerprint: () => Promise<DeviceFingerprint>;
-  startProxy: (config: ProxyConfig) => Promise<{ success: boolean; error?: string }>;
+  startProxy: (config: ProxyConfig) => Promise<{ success: boolean; activeAccountId?: string | null; error?: string }>;
   stopProxy: () => Promise<{ success: boolean; error?: string }>;
   proxyStatus: () => Promise<{ running: boolean }>;
   onProxyLog: (callback: (log: string) => void) => void;

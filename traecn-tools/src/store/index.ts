@@ -25,15 +25,15 @@ interface AppStore {
   save: () => Promise<void>;
 
   // Account actions
-  addAccount: (account: Account) => void;
-  updateAccount: (id: string, updates: Partial<Account>) => void;
-  removeAccount: (id: string) => void;
-  switchAccount: (id: string) => void;
-  setAccountDisabled: (id: string, disabled: boolean) => void;
+  addAccount: (account: Account) => Promise<void>;
+  updateAccount: (id: string, updates: Partial<Account>) => Promise<void>;
+  removeAccount: (id: string) => Promise<void>;
+  switchAccount: (id: string) => Promise<void>;
+  setAccountDisabled: (id: string, disabled: boolean) => Promise<void>;
 
   // Proxy actions
-  updateProxyConfig: (updates: Partial<ProxyConfig>) => void;
-  startProxy: () => Promise<{ success: boolean; error?: string }>;
+  updateProxyConfig: (updates: Partial<ProxyConfig>) => Promise<void>;
+  startProxy: () => Promise<{ success: boolean; activeAccountId?: string | null; error?: string }>;
   stopProxy: () => Promise<{ success: boolean; error?: string }>;
   addProxyLog: (log: string) => void;
 
@@ -149,53 +149,89 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  addAccount: (account) => {
+  addAccount: async (account) => {
+    const prevAccounts = get().accounts;
     set((state) => ({ accounts: [...state.accounts, account] }));
-    get().save();
+    try {
+      await get().save();
+    } catch (e) {
+      set({ accounts: prevAccounts });
+      throw e;
+    }
   },
 
-  updateAccount: (id, updates) => {
+  updateAccount: async (id, updates) => {
+    const prevAccounts = get().accounts;
     set((state) => ({
       accounts: state.accounts.map((a) => (a.id === id ? { ...a, ...updates } : a)),
     }));
-    get().save();
+    try {
+      await get().save();
+    } catch (e) {
+      set({ accounts: prevAccounts });
+      throw e;
+    }
   },
 
-  removeAccount: (id) => {
+  removeAccount: async (id) => {
+    const prevAccounts = get().accounts;
+    const prevCurrent = get().currentAccountId;
     set((state) => ({
       accounts: state.accounts.filter((a) => a.id !== id),
       currentAccountId: state.currentAccountId === id ? null : state.currentAccountId,
     }));
-    get().save();
+    try {
+      await get().save();
+    } catch (e) {
+      set({ accounts: prevAccounts, currentAccountId: prevCurrent });
+      throw e;
+    }
   },
 
-  switchAccount: (id) => {
+  switchAccount: async (id) => {
+    const prevAccounts = get().accounts;
+    const prevCurrent = get().currentAccountId;
     set((state) => ({
       accounts: state.accounts.map((a) => ({ ...a, isCurrent: a.id === id })),
       currentAccountId: id,
     }));
-    get().save();
+    try {
+      await get().save();
+    } catch (e) {
+      set({ accounts: prevAccounts, currentAccountId: prevCurrent });
+      throw e;
+    }
   },
 
-  setAccountDisabled: (id, disabled) => {
+  setAccountDisabled: async (id, disabled) => {
+    const prevAccounts = get().accounts;
     set((state) => ({
       accounts: state.accounts.map((a) => (a.id === id ? { ...a, disabled } : a)),
     }));
-    get().save();
+    try {
+      await get().save();
+    } catch (e) {
+      set({ accounts: prevAccounts });
+      throw e;
+    }
   },
 
-  updateProxyConfig: (updates) => {
-    set((state) => {
-      const updated = { ...state.proxyConfig, ...updates };
-      const url = `http://127.0.0.1:${updated.listenPort}`;
-      apiClient.setBaseUrl(url);
-      apiClient.setApiKey(updated.authEnabled && updated.apiKey ? updated.apiKey : '');
-      return {
-        proxyConfig: updated,
-        backendUrl: url,
-      };
+  updateProxyConfig: async (updates) => {
+    const prevConfig = get().proxyConfig;
+    const updated = { ...prevConfig, ...updates };
+    const url = `http://127.0.0.1:${updated.listenPort}`;
+    apiClient.setBaseUrl(url);
+    apiClient.setApiKey(updated.authEnabled && updated.apiKey ? updated.apiKey : '');
+    set({
+      proxyConfig: updated,
+      backendUrl: url,
     });
-    get().save();
+    try {
+      await get().save();
+    } catch (e) {
+      set({ proxyConfig: prevConfig });
+      throw e;
+    }
   },
 
   startProxy: async () => {
@@ -203,7 +239,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (result.success) {
       set({
         proxyRunning: true,
-        runtimeActiveAccountId: get().currentAccountId,
+        runtimeActiveAccountId: result.activeAccountId || null,
       });
     }
     return result;

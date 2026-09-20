@@ -756,7 +756,7 @@ async function startProxyServiceInternal(config) {
       return { success: false, error: `代理服务就绪探活超时，端口 ${listenPort} 未能成功建立监听` };
     }
 
-    return { success: true };
+    return { success: true, activeAccountId: proxyConfig.active_account_id || null };
   } catch (e) {
     return { success: false, error: e.message };
   }
